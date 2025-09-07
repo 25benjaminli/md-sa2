@@ -1,0 +1,74 @@
+vit_name: tiny
+model_type: sam_2
+sam_ckpt: checkpoints/sam2_hiera_t.pt
+ft_ckpt: null
+rank: -1
+deterministic: true
+seed: 1234
+verbose: false
+conf_threshold: 0.5
+use_prev_mask: false
+visualize: false
+save_img: false
+img_size: 384
+seg_size: 224
+num_classes: 3
+oversample: 0
+num_slices: 143
+modalities:
+- t2f
+- t1c
+- t1n
+modalities_yolo: []
+use_box: false
+use_cache: false
+pseudo_slices_prop: 0
+n_gpu: 1
+num_workers: 0
+batch_size_train: 4
+batch_size_val: 4
+warmup_epochs: 2
+use_warmup: false
+max_epochs: 20
+base_lr: 1.5e-05
+val_every: 1
+fold_train:
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+fold_val:
+- 0
+fold_num: 10
+optimizer: ADAMW
+loss: GDF
+use_mse: false
+scheduler: COSAN
+use_amp: true
+compile: false
+use_curriculum: false
+preprocessing:
+  useNorm: true
+  resize: true
+  resize_dims:
+  - 384
+  - 384
+augmentation:
+  flipH:
+    p: 0.3
+  flipW:
+    p: 0.3
+  flipD:
+    p: 0.3
+  FG:
+    p: 0.5
+    offsets: 0.15
+  zoom:
+    p: 0.2
+    min: 0.9
+    max: 1.1

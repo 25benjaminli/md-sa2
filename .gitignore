@@ -1,0 +1,35 @@
+data/
+MDSA2/checkpoints/sam_vit_b_01ec64.pth
+MDSA2/checkpoints/medsam_vit_b.pth
+MDSA2/runs/
+extra_software/stl/
+MDSA2/pickle_dir/
+.env
+MDSA2/train/runs/
+__pycache__/
+MDSA2/save/
+MDSA2/eval/runs/
+MDSA2/eval/predictions
+MDSA2/checkpoints/model_aggregator.pt
+MDSA2/checkpoints/best_aggregator.pth
+MDSA2/checkpoints/best_model_sam2*.pth
+extra_software/visualization/volumes/
+extra_software/visualization/temp/
+
+
+MDSA2/checkpoints/sam2_hiera_tiny.pt
+MDSA2/experiments
+comparisons/model.pt
+validation/
+
+# comparisons/swinunetr*
+# comparisons/plainconvunet*
+# comparisons/unetregular*
+comparisons/models/
+comparisons/Medical-SAM-Adapter/
+comparisons/foreground-bt/
+comparisons/predictions/
+MDSA2/checkpoints/*
+
+*.pt
+MDSA2/BatchViewer

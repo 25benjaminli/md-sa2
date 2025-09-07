@@ -1,0 +1,41 @@
+losses:
+  GDF:
+      # name: "Generalized Dice Focal Loss"
+      lambda_gdl: 0.75
+      lambda_focal: 1.25
+      gamma: 2
+      include_background: true
+      sigmoid: true
+
+  DL:
+      # name: "Dice Loss"
+      include_background: true
+      sigmoid: true
+
+  DCE:
+      # name: "Dice Cross-Entropy Loss"
+      lambda_dice: 0.75
+      lambda_ce: 1.25
+      include_background: true
+      sigmoid: true
+      # lr 0.005 works kinda bad
+
+optimizers:
+  ADAMW: 
+      # name: "AdamW"
+      betas: [0.9,0.999]
+      # eps: 1e-8
+      weight_decay: 0.05
+  SGD: 
+      # name: "SGD"
+      momentum: 0.9
+      weight_decay: 0.05
+
+schedulers:
+  EXP: # exp lr
+    # name: "Exponential Decay"
+    gamma: 0.95
+  COSAN:
+    # name: "Exponential Annealing"
+  COSANWARm:
+    # name: "Cosine Annealing Warm Restarts"
