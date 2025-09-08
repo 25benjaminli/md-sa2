@@ -23,6 +23,9 @@ import json
 import resource
 from collections import OrderedDict
 from utils import generate_rndm_path
+from typing import Tuple
+from unet_models import UNetWrapper
+import yaml
 
 def print_metric(metric_name, metric_arr):
     print(f"{metric_name} (overall average): ", round(np.mean(np.mean(metric_arr, axis=1)),4), "+-", round(np.std(np.mean(metric_arr, axis=1), ddof=1),4))
@@ -31,19 +34,21 @@ def print_metric(metric_name, metric_arr):
     print("---------")
 
 class MDSA2(nn.Module):
-    def __init__(self, sam2_model, unet_inferer, config):
+    """
+    End-to-end module combining SA2 and U-Net for medical image segmentation. 
+    """
+    def __init__(self, sam2_model, unet_model: UNetWrapper, config=None):
         super().__init__()
         self.sam2_model = sam2_model
-        self.unet_inferer = unet_inferer
+        self.unet_model = unet_model
         self.config = config
         # self.metric_dict = metric_dict
         self.metric_accumulator_mdsa2 = MetricAccumulator()
         self.metric_accumulator_sa2 = MetricAccumulator()
 
 
-    def forward(self, batch):
+    def forward(self, batch, save_path=None):
         image, label, volume_name = batch["image"], batch["label"], batch["image_title"]
-
         arr_pred = torch.zeros(image.shape).cuda()
         arr_low_res = torch.zeros(size=(image.shape[0], image.shape[1], image.shape[2] // 4, image.shape[3] //4, image.shape[4])).cuda()
         
@@ -56,7 +61,7 @@ class MDSA2(nn.Module):
                 arr_pred[..., current_slice] = torch.sigmoid(outputs['prd_masks']) > self.config.conf_threshold
                 arr_low_res[..., current_slice] = outputs['low_res_logits']
 
-        # interpolate arr pred
+        # Interpolate arr pred
         size_resized = (self.config.seg_size, self.config.seg_size, image.shape[-1])
 
         arr_pred = nn.functional.interpolate(input=arr_pred, size=size_resized, mode="nearest-exact")
@@ -67,7 +72,7 @@ class MDSA2(nn.Module):
         for case in range(len(arr_pred)):
             self.metric_accumulator_sa2.update(y_pred=arr_pred[case].unsqueeze(0), y_true=label[case].unsqueeze(0))
 
-        if not self.unet_inferer:
+        if not self.unet_model:
             return self.metric_accumulator_sa2.get_metrics(), {}
         
         # repermute image
@@ -77,88 +82,87 @@ class MDSA2(nn.Module):
         
         with torch.inference_mode():
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
-                logits = self.unet_inferer(data) # logits shape torch.Size([4, 3, 155, 224, 224])
-
-        post_sigmoid = Activations(sigmoid=True)
-        post_pred = AsDiscrete(argmax=False, threshold=0.5)
-
-        val_outputs_list = decollate_batch(logits) # logits, might use for smth else
-        val_outputs = [post_pred(post_sigmoid(val_pred_tensor)) for val_pred_tensor in val_outputs_list]
+                val_outputs = self.unet_model.run(data) # logits shape torch.Size([4, 3, 155, 224, 224])
 
         for case in range(len(arr_pred)):
             # save to an np array
-            self.metric_accumulator.update(y_pred=val_outputs[case].unsqueeze(0), y_true=label[case].unsqueeze(0))
-            save_path = os.path.join(self.config.snapshot_path, "predictions")
-            os.makedirs(save_path, exist_ok=True)
-            fname = f"{volume_name[case]}_fold_{self.config.fold_val[0]}_{avg_dice}.npy"
-            arr_np = val_outputs[case].unsqueeze(0).detach().cpu().numpy()
+            self.metric_accumulator_mdsa2.update(y_pred=val_outputs[case].unsqueeze(0), y_true=label[case].unsqueeze(0))
             
-            np.save(os.path.join(save_path, fname), arr_np)
-            # print("saved to", os.path.join(save_path, fname))
+            if save_path is not None:
+                save_path = os.path.join(save_path)
+                os.makedirs(save_path, exist_ok=True)
+                curr_dice = self.metric_accumulator.meters["dice"].cache[-1] # get the most recent dice value
+                
+                fname = f"{volume_name[case]}_fold_{self.config.fold_val[0]}_{curr_dice}.npy"
+                arr_np = val_outputs[case].unsqueeze(0).detach().cpu().numpy()
+                
+                np.save(os.path.join(save_path, fname), arr_np)
+        
+        return self.metric_accumulator_sa2.get_metrics(), self.metric_accumulator_mdsa2.get_metrics() if self.unet_model else {}
 
-        
-        return self.metric_accumulator_sa2.get_metrics(), self.metric_accumulator_mdsa2.get_metrics()
-        
+def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
+    train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1)
+
+    path_thing = os.path.join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_eval}")
+
+    model_config.ft_ckpt = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train", "runs", "brats_africa", path_thing, "best_model_sam2.pth")
+    model_config.batch_size_train=1 # manually set to 1 for comparison
+    model_config.batch_size_val=1 # manually set to 1 for comparison
+    model_config.snapshot_path = generate_rndm_path(os.path.join("eval", "runs", "aggregator"))
+
+    assert os.path.exists(model_config.ft_ckpt), f"fine tuned ckpt {model_config.ft_ckpt} does not exist"
+    print("model checkpoint", model_config.ft_ckpt)
+
+    sam2 = register_net_sam2(model_config)
+
+    # yeah... this is pretty ugly
+    volumes_to_collect = yaml.load(open(os.path.join(os.getenv("PROJECT_PATH", ""), "volumes_to_collect.yaml"), 'r'), Loader=yaml.FullLoader)
+    config = OmegaConf.create({
+        "model_type": "DynUNet",
+        "use_ref_volume": True,
+        "batch_size": 1,
+        "max_epochs": 100,
+        "roi": [128, 128, 128],
+        "sw_batch_size": 1,
+        "infer_overlap": 0.5,
+        "fold_val": model_config.fold_val,
+        "volumes_to_collect": volumes_to_collect,
+        "model_name": "aggregator"
+    })
+    
+    strides = [[1, 1, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
+    filters = [16, 24, 32, 48, 64, 96, 128]
+    
+    model_params = {
+        "kernels": [[3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]],
+        "strides": strides,
+        "filters": filters,
+        "upsample_kernel_size": strides[1:],
+        "spatial_dims": 3,
+        "in_channels": 6,
+        "out_channels": 3,
+        "norm_name": ("INSTANCE", {"affine": True}),
+        "act_name": ("leakyrelu", {"inplace": False, "negative_slope": 0.01}),
+        "deep_supervision": False,
+        # "deep_supr_num": self.args.deep_supr_num,
+        "res_block": False,
+        "trans_bias": True,
+    }
+
+    aggregator_unet = UNetWrapper(train_loader=None, val_loader=val_loader, loss_func=None, 
+    scaler=None, optimizer=None, config=config, **model_params)
+
+    model = MDSA2(sam2, unet_model=aggregator_unet, config=model_config)
+    model.eval()
+
+    return model, train_loader, val_loader
+
 def eval_loop(args, model_config):
     num_all_folds = 10
     model_config.fold_train = [i for i in range(num_all_folds) if i != args.fold_eval]
     model_config.fold_val = [args.fold_eval]
 
-    path_thing = os.path.join(f"{args.config_folder}_cv", f"cv_fold_{args.fold_eval}")
-
-    model_config.ft_ckpt = os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "train", "runs", "brats_africa", path_thing, "best_model_sam2.pth")
-    model_config.batch_size_train=1 # manually set to 1 for comparison
-    model_config.batch_size_val=1 # manually set to 1 for comparison
-    model_config.snapshot_path = generate_rndm_path(os.path.join("eval", "runs", "aggregator"))
-    
-    assert os.path.exists(model_config.ft_ckpt), f"lora ckpt {model_config.ft_ckpt} does not exist"
-    print("model checkpoint", model_config.ft_ckpt)
-
-    sam2_model = register_net_sam2(model_config = model_config)
-    
-    ############### load aggregator model
-
-    checkpoint_to_load = os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "train", "runs", "aggregator", path_thing, "best_model.pth")
-    loaded = torch.load(checkpoint_to_load)
-    print("loading model from", checkpoint_to_load)
-    print("epoch of loaded", loaded['epoch'], "best acc", loaded['best_acc'])
-
-    ############### get dataloaders
-    train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1)
-    
-
-    ############### define unet_inferer
-    
-    kernels = [[3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]]
-    strides = [[1, 1, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
-
-    filters = [16, 24, 32, 48, 64, 96, 128]
-
-    aggregator_model = DynUNet(
-        spatial_dims=3,
-        in_channels=6,
-        out_channels=3,
-        kernel_size=kernels,
-        strides=strides,
-        upsample_kernel_size=strides[1:],
-        filters=filters,
-        norm_name=("INSTANCE", {"affine": True}),
-        act_name=("leakyrelu", {"inplace": False, "negative_slope": 0.01}),
-        deep_supervision=False,
-        # deep_supr_num=self.args.deep_supr_num,
-        res_block=False,
-        trans_bias=True,
-    ).to("cuda")
-    
-    aggregator_model.load_state_dict(loaded['state_dict'])
-    
-    unet_inferer = partial(
-        sliding_window_inference,
-        roi_size=[args.roi[0], args.roi[1], args.roi[2]],
-        sw_batch_size=args.sw_batch_size,
-        predictor=aggregator_model,
-        overlap=args.infer_overlap,
-    )
+    mdsa2, train_loader, val_loader = initialize_mdsa2(model_config, use_unet=True)
 
     ############### define metrics
     
@@ -168,11 +172,6 @@ def eval_loop(args, model_config):
         "iou": MeanIoU(include_background=True, get_not_nans=True, reduction="mean_batch")
     })
 
-    ############### define and run MDSA2
-    mdsa2 = MDSA2(sam2_model=sam2_model, unet_inferer=unet_inferer, config=model_config)
-
-    md_averagemeters = {key: AverageMeter(name="hi") for key in metric_dict.keys()}
-    sa_averagemeters = {key: AverageMeter(name="hi") for key in metric_dict.keys()}
     final_json_metrics_mdsa2 = {}
     final_json_metrics_sa2 = {}
     total_batches = 0

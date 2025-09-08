@@ -140,17 +140,6 @@ def eval_model(model, val_loader, config):
                     inference_duration_list.append(time.time()-t1)
                     arr_low_res[:, label_channel, :, :, current_slice] = (torch.sigmoid(outputs['low_res_logits']) > config.conf_threshold).squeeze(1)
 
-                # print("bbox sam shape", bbox_sam.shape)
-                # if current_slice >50:
-                #     fig, axes = plt.subplots(1, 2)
-                #     print("bbox sam shape", bbox_np.shape, bbox_np[0])
-
-
-                #     axes[0].imshow(binary_label[0], cmap="gray")
-                #     axes[1].imshow(arr_low_res[0, label_channel, :, :, current_slice].cpu().numpy(), cmap="gray")
-                #     show_box(bbox_np[0], axes[0])
-                #     plt.show()
-
         arr_pred = nn.functional.interpolate(input=arr_low_res, size=(224, 224, config.num_slices), mode="nearest-exact")
         label = nn.functional.interpolate(input=label, size=(224, 224, config.num_slices), mode="nearest-exact")
         assert arr_pred.shape == label.shape, f"arr pred shape {arr_pred.shape} not equal to label shape {label.shape}"
@@ -160,8 +149,6 @@ def eval_model(model, val_loader, config):
             dsc_fn(y_pred=arr_pred[b].unsqueeze(0), y=label[b].unsqueeze(0))
             val_dice_3D, val_dice_3D_not_nans = dsc_fn.aggregate()
             dice_array.append(val_dice_3D.squeeze().cpu().numpy().tolist())
-
-        
        
         # calculate non batched dice
         # val_dice_nonbatched, val_dice_not_nans_nonbatched = [], []
@@ -171,13 +158,6 @@ def eval_model(model, val_loader, config):
         for i in range(image.shape[0]):
 
             arr_transp, label_transp = arr_pred[i].permute((0, 3, 1, 2)), label[i].permute((0, 3, 1, 2))
-            # print("transposed shapes", arr_transp.shape, label_transp.shape, image_transp.shape)
-
-
-            # assert arr_pred_resized.shape == (3, config.seg_size, config.seg_size), f"got shape {arr_pred_resized.shape}"
-
-            # save this part of arr_pred
-            # ensure they're scaled down to the original size
             volume_pred, volume_label = arr_transp.cpu().numpy(), label_transp.cpu().numpy()
             # must be the same shape
             assert len(volume_pred.shape) == 4, f"volume shape should be 4 (3xIMGxIMGxSLICE), got {volume_pred.shape}"
@@ -192,54 +172,32 @@ def eval_model(model, val_loader, config):
 
                     # create folder under predictions base called sa if it doesn't exist
                     os.makedirs(predictions_base, exist_ok=True)
-                    # os.makedirs(os.path.join(predictions_base, "sa"), exist_ok=True)
 
                     np.save(os.path.join(predictions_base,f"{batch['image_title'][i]}_fold_{config.fold_val[0]}.npy"), volume_pred)
 
         # print(batch["image_title"])
         print(f"batch {batch['image_title']} {i_val}/{val_len} dice took {time.time()-t1}", st)
-        # print(f"val loss {running_val_batch_loss/image.shape[4]}")
-        # print(f"dice meter unbatched: {dice_meter_unbatched.avg} {sum(val_dice_3D)/3}") # this is the same as regular
 
         t1 = time.time()
             
 
     final_val_dice_3D = dice_meter_3D.avg
 
-    # print(f"2D val dice, {final_val_dice_2D} {sum(final_val_dice_2D)/3}")
-    # if config.num_classes > 1:
     print(f"3D val dice, {final_val_dice_3D} {sum(final_val_dice_3D)/3}")
     print("dice array", dice_array)
-    # else:
-        # print(f"binary dice, {binary_dice_meter.avg}")
     print(f"Took {time.time()-orig_time}")
-    # print("Dict stuff")
-    # print(dict_scores)
     print("length of dictionary", len(dict_scores.keys()))
 
     avg_2d_inf = sum(inference_duration_list)/len(inference_duration_list)
-    # calcultae 3d inf 
     avg_3d_inf = avg_2d_inf*155/config.batch_size_val
     print("average inference duration", avg_3d_inf)
-    # assert len(dict_scores.keys()) == len(val_loader.dataset), f"length of dictionary {len(dict_scores.keys())} not equal to length of dataset {len(val_loader.dataset)}"
-    # save dict to snapshot_path/validation_scores.json
-
-    # print(dict_scores[0], dict_scores[1])
-    # os.makedirs(os.path.join(snapshot_path, "validation_scores"), exist_ok=True)
-    
 
     dict_scores["summary"] = {
-        # "2D": final_val_dice_2D.tolist(),
         "3D": final_val_dice_3D.tolist(),
         "3D average": float(sum(final_val_dice_3D)/3),
-        # "iou": iou_meter.avg.tolist(),
-        # "hd95": hd95_meter.avg.tolist(),
         # "iou average": float(sum(iou_meter.avg)/3),
         # "hd95 average": float(sum(hd95_meter.avg)/3),
     }
-
-    # with open(os.path.join(snapshot_path, "validation_scores", f"val_scores.json"), "w") as f:
-        # json.dump(dict_scores, f, indent=4)
 
     return dict_scores
 
@@ -249,11 +207,8 @@ def get_val_dataloader(config, use_preprocessed=False):
         [
             AddNameField(keys=["image"]),
             transforms.LoadImaged(keys=["image", "label"]), # assuming loading multiple at the same time.
-            # RepeatModality(keys=["image", "label"], modality_to_repeat=0), # repeat t2f 3 times
             ConvertToMultiChannel(keys="label", use_softmax=False),
             transforms.CastToTyped(keys=["image", "label"], dtype=(torch.float16, torch.uint8)),
-            # scale intensity ranged
-            # transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=1, upper=99, b_min=0.0, b_max=1.0, clip=True),
             transforms.ToTensord(keys=["image", "label"], track_meta=False),
         ]
     )
@@ -321,14 +276,6 @@ if __name__ == '__main__':
     
     set_deterministic(1234)
     print("preprocessing")
-
-    # os.chdir("..")
-    # os.system(f"python preprocess.py --config_folder sam2_{config_final.modalities[0]} --no_normalize")
-    # os.chdir("./eval")
-
-    
-
-    # # both will take multimodal images. 
 
     if config_final.model_type == "sam_2":
         model = register_net_sam2(model_config = config_final)

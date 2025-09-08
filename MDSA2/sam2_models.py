@@ -8,37 +8,30 @@ import math
 from torch.nn.parameter import Parameter
 
 class LoRA_SAM2(nn.Module):
-
     def __init__(self, predictor, r: int, lora_layer=None):
         super(LoRA_SAM2, self).__init__()
-
 
         assert r > 0
         self.predictor = predictor
 
-        # base_vit_dim = sam_model.image_encoder.patch_embed.proj.out_channels
-        # dim = base_vit_dim
         if lora_layer:
             self.lora_layer = lora_layer
         else:
             self.lora_layer = list(
                 range(len(self.predictor.model.image_encoder.trunk.blocks)))  # Only apply lora to the image encoder by default
-        # create for storage, then we can init them or load weights
         self.w_As = []  # These are linear layers
         self.w_Bs = []
 
         st = "Total number of parameters sam2 before lora:"
         print(st, sum(p.numel() for p in predictor.model.parameters() if p.requires_grad))
 
-
-        # lets freeze first
+        # freeze the original image encoder
         for param in self.predictor.model.image_encoder.parameters():
             param.requires_grad = False
 
-        # Here, we do the surgery
+        
         print(len(self.predictor.model.image_encoder.trunk.blocks))
         for t_layer_i, blk in enumerate(self.predictor.model.image_encoder.trunk.blocks): # TRUNK
-            # If we only want few lora layer instead of all
             if t_layer_i not in self.lora_layer:
                 continue
             w_qkv_linear = blk.attn.qkv
@@ -61,13 +54,7 @@ class LoRA_SAM2(nn.Module):
         self.reset_parameters()
 
     def save_lora_parameters(self, filename: str) -> None:
-        # scheduler, optimizer, epoch
-        r"""Only safetensors is supported now.
-
-        pip install safetensor if you do not have one installed yet.
-
-        save both lora and fc parameters.
-        """
+        
 
         assert filename.endswith(".pt") or filename.endswith('.pth')
 
@@ -92,18 +79,12 @@ class LoRA_SAM2(nn.Module):
                 mask_decoder_tensors[key] = value
 
         merged_dict = {**a_tensors, **b_tensors, **prompt_encoder_tensors, **mask_decoder_tensors} # mask decoder is being updated
-        
+        # TODO: save scheduler, optimizer, epoch info as well
 
         torch.save(merged_dict, filename)
 
     
     def load_lora_parameters(self, filename: str) -> None:
-        r"""Only safetensors is supported now.
-
-        pip install safetensor if you do not have one installed yet.\
-
-        load both lora and fc parameters.
-        """
 
         assert filename.endswith(".pt") or filename.endswith('.pth')
 
@@ -143,7 +124,7 @@ class LoRA_SAM2(nn.Module):
 
 
     def forward(self, image, using_sigmoid=True, return_img_embedding=False, upscale=True):
-        self.predictor.set_image_batch(image) # normalized regularly? Need to remove this
+        self.predictor.set_image_batch(image) # ! Revisit
         sparse_embeddings, dense_embeddings = self.predictor.model.sam_prompt_encoder(points=None,boxes=None,masks=None)
         high_res_features = [feat_level for feat_level in self.predictor._features["high_res_feats"]]
         # print(self.predictor._features["image_embed"].shape)
@@ -153,13 +134,11 @@ class LoRA_SAM2(nn.Module):
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
             multimask_output=True,
-            repeat_image=True, # !! ??
+            repeat_image=True, # ! Revisit
             high_res_features=high_res_features,
             using_sigmoid=using_sigmoid
         )
-        # print(low_res_logits.shape)
 
-        # ! resolve orig_hw thing
         if upscale:
             prd_masks = self.predictor._transforms.postprocess_masks(low_res_logits, self.predictor._orig_hw[-1])
 
@@ -171,7 +150,6 @@ class LoRA_SAM2(nn.Module):
         else:
             return low_res_logits, prd_scores
       
-
 
 class _LoRA_qkv(nn.Module):
     """In Sam it is implemented as
@@ -234,7 +212,7 @@ class SAM2_Regular(nn.Module):
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
             multimask_output=multimask_output,
-            repeat_image=repeat_image, # !! ?? False if lr_mask is not None else True
+            repeat_image=repeat_image, # !
             high_res_features=high_res_features,
             using_sigmoid=using_sigmoid
         )

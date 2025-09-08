@@ -22,9 +22,7 @@ if __name__ == '__main__':
 
     # first, generate the json
     os.chdir(os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
-
     os.system("python generate_json.py --config_folder " + args.config_folder)
-    # os.chdir(os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train"))
 
 
     # load config

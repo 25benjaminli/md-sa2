@@ -7,7 +7,7 @@ import monai
 from monai.utils.enums import MetricReduction
 
 class MetricAccumulator():
-    def __init__(self, exclude_metrics=None, additional_metrics=None):
+    def __init__(self, exclude_metrics=None, additional_metrics=None, track_time=False):
         self.metric_dict = {
             "dice": DiceMetric(include_background=True, get_not_nans=True, ignore_empty=True, reduction='mean_batch'), # BCHW[D]
             "hd95": HausdorffDistanceMetric(include_background=True, reduction="mean_batch",get_not_nans=True, percentile=95),
@@ -24,11 +24,17 @@ class MetricAccumulator():
                 self.metric_dict[metric] = additional_metrics[metric]
 
         self.meters = {key: AverageMeter(name=key) for key in self.metric_dict.keys()}
+        
+        if track_time:
+            self.inference_meter = AverageMeter(name="inference_time")
     
-    def update(self, y_pred, y_true, save_pred_path=None):
+    def update(self, y_pred, y_true, save_pred_path=None, time_spent=None):
         """
         Assumes y_pred and y_true are the following format: (B, C, H, W)
         """
+        if hasattr(self, 'inference_meter') and time_spent is not None:
+            self.inference_meter.update(time_spent, n=len(y_true)) # TODO: confirm this is correct
+
         for metric_name in self.metric_dict.keys():
             if type(self.metric_dict[metric_name]) == CumulativeIterationMetric:
                 self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
@@ -40,7 +46,6 @@ class MetricAccumulator():
                 val = self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
                 self.meters[metric_name].update(val.cpu().numpy(), n=1)
 
-
         if save_pred_path:
             np.save(save_pred_path, y_pred.cpu().numpy())
 
@@ -50,6 +55,11 @@ class MetricAccumulator():
             summary_dict[key] = {
                 "avg": self.meters[key].avg,
                 "stdev": self.meters[key].stdev
+            }
+        if hasattr(self, 'inference_meter'):
+            summary_dict["inference_time"] = {
+                "avg": self.inference_meter.avg,
+                "stdev": self.inference_meter.stdev
             }
         return summary_dict
 

@@ -1,4 +1,3 @@
-from monai.utils.type_conversion import convert_to_tensor
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,21 +5,14 @@ import matplotlib.patches as patches
 import torch
 import torch.nn.functional as F
 import monai
-import json
 import os
 import time
-import io
 import string
-# # import tensorflow as tf
 import matplotlib as mpl
-import glob
 
-from torch.utils.data import Dataset, DataLoader
-import nibabel as nib
 import numpy as np
 import logging
 
-from tqdm import tqdm
 
 # import module
 from importlib import import_module
@@ -465,7 +457,6 @@ def register_net_sam2(model_config):
   else:
     print("using regular")
     net = SAM2_Regular(predictor).cuda() # means you just use the regular one
-    # TODO: add loading ckpt
 
     if model_config.ft_ckpt is not None: # not actually lora, but just the pretrained one...
       print("loading ckpt", model_config.ft_ckpt)
@@ -499,7 +490,6 @@ def initialize_logger(snapshot_path, log_file='train.log'):
   return logger
 
 def generate_snapshot_path(config, output_path='./runs', isVal = False):
-  run_id = 1
   snapshot_path = ""
   if config.custom_name != None:
     if not os.path.exists(f"{output_path}/{config.dataset}/{config.custom_name}"):
