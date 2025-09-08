@@ -24,13 +24,13 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
 
     os.system("python generate_json.py --config_folder " + args.config_folder)
-    os.chdir(os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train"))
+    # os.chdir(os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train"))
 
 
     # load config
     print("-------------- USING CONFIG: ", args.config_folder)
-    config_final = OmegaConf.load(open(os.path.join('../config', args.config_folder, 'config_train.yaml'), 'r'))
-    details = OmegaConf.load(open(os.path.join('../config', args.config_folder, 'details.yaml'), 'r'))
+    config_final = OmegaConf.load(open(os.path.join('config', args.config_folder, 'config_train.yaml'), 'r'))
+    details = OmegaConf.load(open(os.path.join('config', args.config_folder, 'details.yaml'), 'r'))
 
     # merge details into config_final
     config_final = OmegaConf.merge(config_final, details)

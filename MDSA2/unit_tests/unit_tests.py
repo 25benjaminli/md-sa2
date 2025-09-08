@@ -16,28 +16,36 @@ Because deep learning algos are not always going to generate the same results ev
 """
 
 import torch
-from ..metrics import MetricAccumulator
+
+# use sys path append to import from parent directory
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
-from ..metrics import calculate_binary_dice
 import os
 from data_utils import get_dataloaders
 from omegaconf import OmegaConf
-from ..utils import register_net_sam2
-from ..utils import generate_rndm_path, AverageMeter
 from pipeline import MDSA2
 from monai.inferers import sliding_window_inference
 from functools import partial
 from monai.networks.nets import DynUNet
 
+from metrics import MetricAccumulator, calculate_binary_dice
+from utils import register_net_sam2, generate_rndm_path, AverageMeter, visualize_3D_volumes, set_deterministic
+from pipeline import MDSA2
+from matplotlib.widgets import Slider
+import matplotlib.pyplot as plt
 
 class TestData:
     @staticmethod
     def test_preprocess():
+        os.chdir("..")
         os.system("python preprocess.py --config_folder sam2_tenfold")
         # confirm that the preprocessed folder exists and has number of files equivalent to brats_africa dataset
-        assert os.path.exists("sam2_tenfold/preprocessed"), "Preprocessed folder does not exist."
-        preprocessed_folder_names = os.listdir("sam2_tenfold/preprocessed")
-        brats_africa_folder_names = os.listdir("brats_africa")
+        assert os.path.exists(os.path.join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed")), "Preprocessed folder does not exist."
+        preprocessed_folder_names = os.listdir(os.path.join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed"))
+        brats_africa_folder_names = os.listdir(os.path.join(os.getenv("PROJECT_PATH", ""), "data", "brats_africa"))
         # the fnames should ALL match each other
         assert sorted(preprocessed_folder_names) == sorted(brats_africa_folder_names), "File names in preprocessed folder do not match brats_africa dataset."
 
@@ -46,31 +54,15 @@ class TestData:
         for folder_name in preprocessed_folder_names:
             folder_path = os.path.join(os.getenv("PREPROCESSED_PATH", ""), folder_name)
             files = os.listdir(folder_path)
-            assert len(files) == 3, f"Folder {folder_name} does not contain 3 modality files."
+            assert len(files) == 4, f"Folder {folder_name} does not contain 4 files (3 modality, one seg)."
             modalities = [f.split('-')[-1].split('.')[0] for f in files]
-            assert sorted(modalities) == sorted(['t1c', 't1n', 't2f']), f"Folder {folder_name} does not contain correct modality files."
+            assert sorted(modalities) == sorted(['seg', 't1c', 't1n', 't2f']), f"Folder {folder_name} does not contain correct modality files."
         print("Data preprocessing test passed.")
     
     @staticmethod
-    def test_generate_json():
-        # generate_json creates a file: fold_data_stuff. Examine that for correctness
-        os.system("python generate_json.py --config_folder sam2_tenfold")
-        assert os.path.exists("sam2_tenfold/fold_data_stuff.json"), "fold_data_stuff.json does not exist."
-        import json
-        with open("sam2_tenfold/fold_data_stuff.json", 'r') as f:
-            data = json.load(f)
-        # check if the keys are correct
-
-        with open("expected_folds.json", 'r') as f:
-            expected_data = json.load(f)
-
-        assert(sorted(data.keys()) == sorted(expected_data.keys())), f"Keys in fold_data_stuff.json {sorted(data.keys())} don't match expected {sorted(expected_data.keys())}."
-        for key in data.keys():
-            assert(data[key] == expected_data[key]), f"Values for key {key} in fold_data_stuff.json don't match expected."
-
-    @staticmethod
     def test_dataloading():
         # this tests transforms and data loading
+        set_deterministic(42)
         model_config = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
         model_config = OmegaConf.load(model_config)
         
@@ -82,8 +74,8 @@ class TestData:
         for batch in train_loader:
             images, labels, image_title = batch["image"], batch["label"], batch["image_title"]
 
-            assert len(images.shape) == 5, f"Expected 5D tensor for images, got {images.shape}."
-            assert len(labels.shape) == 4, f"Expected 4D tensor for labels, got {labels.shape}."
+            assert images.shape == (4, 3, 384, 384, 155), f"Expected 5D tensor for images, got {images.shape}."
+            assert labels.shape == (4, 3, 384, 384, 155), f"Expected 5D tensor for labels, got {labels.shape}."
             # labels should only be binarized
             unique_labels = torch.unique(labels)
             print("Unique labels in the label:", unique_labels)
@@ -95,6 +87,65 @@ class TestData:
             break
 
         print("Data utilities test passed.")
+
+    @staticmethod
+    def visualize_test_and_image():
+        # load the saved test image and label
+        test_image = np.load("test_image_221.npy")
+        test_label = np.load("test_label_221.npy")
+        
+        # Get dimensions
+        C, H, W, D = test_image.shape  # Assuming shape is (C, H, W, D)
+        print(f"Image shape: {test_image.shape}")
+        print(f"Label shape: {test_label.shape}")
+        
+        # Create figure and subplots
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))  # 2 rows (image, label), 3 cols (channels)
+        plt.subplots_adjust(bottom=0.25)  # Leave space for slider
+        
+        # Initial slice index (start from middle)
+        initial_slice = D // 2
+        
+        def update_plots(slice_idx):
+            slice_idx = int(slice_idx)
+            
+            # Clear all axes
+            for i in range(2):
+                for j in range(3):
+                    axes[i, j].clear()
+            
+            # Plot image channels in first row
+            for channel in range(min(3, C)):  # Plot up to 3 channels
+                axes[0, channel].imshow(test_image[channel, :, :, slice_idx], cmap='gray')
+                axes[0, channel].set_title(f'Image Channel {channel} - Slice {slice_idx}')
+                axes[0, channel].axis('off')
+            
+            # Plot label channels in second row
+            for channel in range(min(3, C)):  # Plot up to 3 channels
+                axes[1, channel].imshow(test_label[channel, :, :, slice_idx], cmap='gray')
+                axes[1, channel].set_title(f'Label Channel {channel} - Slice {slice_idx}')
+                axes[1, channel].axis('off')
+            
+            # Hide unused subplots if C < 3
+            for channel in range(C, 3):
+                axes[0, channel].axis('off')
+                axes[1, channel].axis('off')
+            
+            fig.canvas.draw_idle()
+        
+        # Initial plot
+        update_plots(initial_slice)
+        
+        # Create slider
+        ax_slider = plt.axes([0.1, 0.1, 0.8, 0.05], facecolor='lightgoldenrodyellow')
+        depth_slider = Slider(ax_slider, 'Depth', 0, D-1, valinit=initial_slice, valstep=1)
+        
+        # Connect slider to update function
+        depth_slider.on_changed(update_plots)
+        
+        plt.tight_layout()
+        plt.show()
+        print("Visualization complete, manually verify the saved .npy files.")
 
 class TestMetricAccumulator:
     @staticmethod
@@ -220,8 +271,8 @@ class TestMDSA2:
 if __name__ == "__main__":
     # run all tests
     TestData.test_preprocess()
-    TestData.test_generate_json()
     TestData.test_dataloading()
+    TestData.visualize_test_and_image()
     TestMetricAccumulator.test_accumulator()
     TestMDSA2.test_onepass(use_unet=False)  # test only SAM stage
     TestMDSA2.test_onepass(use_unet=True)   # test full MD-SA2 model

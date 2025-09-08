@@ -16,7 +16,7 @@ from functools import partial
 from monai.inferers import sliding_window_inference
 from omegaconf import OmegaConf
 from monai.networks.nets import DynUNet
-from metrics import dice_coef_not_nans, iou_not_nans, cf_matrix_metric, AverageMeter, MetricAccumulator
+from metrics import AverageMeter, MetricAccumulator
 import matplotlib.pyplot as plt
 import gc
 import json

@@ -1,7 +1,6 @@
 from monai.utils.type_conversion import convert_to_tensor
 import torch
 import numpy as np
-from data_utils import datafold_read, generate_json
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import torch
@@ -22,7 +21,6 @@ import numpy as np
 import logging
 
 from tqdm import tqdm
-from metrics import dice_coef_not_nans, cf_matrix_metric, iou_not_nans
 
 # import module
 from importlib import import_module
@@ -110,60 +108,6 @@ def visualize_3D_volumes(names_to_volumes, names_to_labels, names_to_preds):
     # Display the interactive plot
     plt.show()
 
-  
-def visualize_vols_flexible(master_dict):
-  """
-  Args:
-    master_dict, containing keys to ...
-    names_to_volumes: dictionary of names to volumes. Each volume can be a 3D array, where it's C x D x H x W
-    names_to_labels: dictionary of names to labels. Each label can be a 3D array, where it's C x D x H x W
-    names_to_preds: dictionary of names to predictions. Each prediction can be a 3D array, where it's C x D x H x W
-  """
-
-  # make an interactive system where you can change the slice index while viewing all the volumes and labels simultaneously
-
-  assert len(names_to_volumes) == len(names_to_labels) and len(names_to_labels) == len(names_to_preds), f"number of volumes and labels must be the same, got {len(names_to_labels)} labels and {len(names_to_volumes)} volumes and {len(names_to_preds)} preds"
-
-  print("shape of volumes", names_to_volumes[list(names_to_volumes.keys())[0]].shape) # 3x155x224x224
-  print("shape of labels", names_to_labels[list(names_to_labels.keys())[0]].shape) # 3x155x224x224
-  print("shape of preds", names_to_preds[list(names_to_preds.keys())[0]].shape) # 3x155x224x224
-
-  C, D, H, W = names_to_volumes[list(names_to_volumes.keys())[0]].shape
-  def update_plots(slice_idx):
-    # fig, axes, volumes, labels, predictions, C, 
-    slice_idx = int(slice_idx)
-    for i in range(C):
-        axes[i, 0].imshow(volumes[i, slice_idx, :, :], cmap='gray')
-        axes[i, 0].set_title(f'Volume Channel {i}')
-        axes[i, 1].imshow(labels[i, slice_idx, :, :], cmap='gray')
-        axes[i, 1].set_title(f'Label Channel {i}')
-        axes[i, 2].imshow(predictions[i, slice_idx, :, :], cmap='gray')
-        axes[i, 2].set_title(f'Prediction Channel {i}')
-    fig.canvas.draw_idle()
-
-  
-  for batch_idx in range(len(names_to_volumes)):
-    fig, axes = plt.subplots(3, 3, figsize=(12, 12))  # 3x3 grid
-    # increase spacing between subplots
-    plt.subplots_adjust(left=0.1, bottom=0.25, hspace=0.5)  # Leave space for slider
-
-    # Initial slice index
-    initial_slice = 0
-    volumes = names_to_volumes[list(names_to_volumes.keys())[batch_idx]].detach().cpu().numpy()
-    labels = names_to_labels[list(names_to_labels.keys())[batch_idx]].detach().cpu().numpy()
-    predictions = names_to_preds[list(names_to_preds.keys())[batch_idx]].detach().cpu().numpy()
-
-    # update_plots(fig, axes, volumes, labels, predictions, C, initial_slice)
-    update_plots(initial_slice)
-
-    ax_slider = plt.axes([0.1, 0.1, 0.8, 0.05], facecolor='lightgoldenrodyellow')
-    depth_slider = Slider(ax_slider, 'Depth', 0, D-1, valinit=initial_slice, valstep=1)
-
-    # Update plots on slider value change
-    depth_slider.on_changed(update_plots)
-
-    # Display the interactive plot
-    plt.show()
 
 def get_volume_number(path):
   # two scenarios currently: either brats 2020 or brats africa

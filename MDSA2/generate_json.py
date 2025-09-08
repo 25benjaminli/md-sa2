@@ -25,7 +25,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # load config
-    print("-------------- USING CONFIG: ", args.config_folder)
+    print("GENERATING JSON WITH CONFIG: ", args.config_folder)
     config = OmegaConf.load(open(os.path.join('config', args.config_folder, 'config_train.yaml'), 'r'))
 
     set_deterministic(config.seed)
@@ -39,11 +39,11 @@ if __name__ == '__main__':
     di, fold_data_orig = generate_json(dataset_path=dataset_path, modalities=config.modalities, fold_num=config.fold_num, \
                         seg_key='seg', config=config, ending=ending) # only use three modalities, each fold is 369/16=23
     
-    json_path = "train.json" if not args.use_preprocessed else "train_preprocessed.json"
+    json_path = "train.json"
     with open(json_path, 'w') as f:
         json.dump(di, f, indent=4)
 
-    fold_data_orig_path = "fold_data_orig.json" if not args.use_preprocessed else "fold_data_orig_preprocessed.json"
+    fold_data_orig_path = "fold_data.json"
     # send sorted fnames to json
     with open(fold_data_orig_path, 'w') as f:
         json.dump(fold_data_orig, f, indent=4)

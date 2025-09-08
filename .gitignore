@@ -33,3 +33,4 @@ MDSA2/checkpoints/*
 
 *.pt
 MDSA2/BatchViewer
+*.npy
