@@ -924,9 +924,10 @@ def get_aggregator_loader(batch_size, roi=(128,128,128), direc='./output_volumes
     return train_loader, val_loader
 
 
-def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalities=['t2f', 't1c', 't1n']):
+def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalities=["t2f", "t1c", "t1n"]):
     # datalist_json = json_list
 
+    # TODO: fix this to work with preprocessed data
     train_transform = transforms.Compose(
         [
             AddNameField(keys=["image", "label"]),
@@ -962,12 +963,8 @@ def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalit
         [
             AddNameField(keys=["image", "label"]),
             transforms.LoadImaged(keys=["image", "label"]),
-            # transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
             ConvertToMultiChannel(keys="label"),
-            # crop image and label center
-            transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=[224,224,-1]),
-            transforms.Resized(keys=["image", "label"], spatial_size=(384,384,-1), mode=("bilinear", "nearest-exact")),
-            transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+            transforms.Resized(keys=["image", "label"], spatial_size=(224,224,-1), mode=("bilinear", "nearest-exact")),
         ]
     )
 
@@ -980,7 +977,7 @@ def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalit
                                                               modalities=modalities, json_path=json_path)
     
     print("length of train files", len(train_files), len(validation_files))
-    # print("first few train files", train_files[:3])   
+    # print("first valid files", validation_files[:3])   
     # train with 4 mods and see what happens
 
     train_ds = monai.data.Dataset(data=train_files, transform=train_transform)

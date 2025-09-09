@@ -41,7 +41,7 @@ model:
       window_pos_embed_bkg_spatial_size:
       - 7
       - 7
-  image_size: 224
+  image_size: 384
   iou_prediction_use_sigmoid: true
   memory_attention:
     _target_: sam2.modeling.memory_attention.MemoryAttention

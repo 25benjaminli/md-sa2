@@ -22,9 +22,7 @@ import torch.backends.cudnn as cudnn
 import random
 import gc
 import SimpleITK as sitk
-from sam2_models import LoRA_SAM2, SAM2_Regular
 from matplotlib.widgets import Slider
-# from data_utils import VolumeDataset, AttrDict # bad solution for circular import
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -449,7 +447,7 @@ def register_net_sam2(model_config):
 
   predictor.model.image_encoder.train(True)
   predictor.model.sam_mask_decoder.train(True)
-
+  from models import LoRA_SAM2, SAM2_Regular
   if model_config.rank > 0:
     print("using lora rank", model_config.rank)
     net = LoRA_SAM2(predictor, model_config.rank).cuda()
@@ -461,8 +459,13 @@ def register_net_sam2(model_config):
     net = SAM2_Regular(predictor).cuda() # means you just use the regular one
 
     if model_config.ft_ckpt is not None: # not actually lora, but just the pretrained one...
-      print("loading ckpt", model_config.ft_ckpt)
-      net.predictor.model.load_state_dict(torch.load(model_config.ft_ckpt))
+      # print("loading ckpt", model_config.ft_ckpt)
+      thing = torch.load(model_config.ft_ckpt, weights_only=False)
+      if "state_dict" in thing.keys():
+         state_dict = thing["state_dict"]
+      else:
+         state_dict = thing
+      net.predictor.model.load_state_dict(state_dict)
 
   return net
 

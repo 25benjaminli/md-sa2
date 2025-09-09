@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from unet_models import UNetWrapper
+from models import UNetWrapper
 from omegaconf import OmegaConf
 import yaml
 from utils import join, generate_rndm_path

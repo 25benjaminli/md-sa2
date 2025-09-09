@@ -27,14 +27,8 @@ import numpy as np
 import os
 from data_utils import get_dataloaders
 from omegaconf import OmegaConf
-from MDSA2.eval.eval_mdsa2 import MDSA2
-from monai.inferers import sliding_window_inference
-from functools import partial
-from monai.networks.nets import DynUNet
-
-from metrics import MetricAccumulator, calculate_binary_dice
-from utils import register_net_sam2, generate_rndm_path, AverageMeter, visualize_3D_volumes, set_deterministic, join
-from MDSA2.eval.eval_mdsa2 import MDSA2, initialize_mdsa2
+from utils import AverageMeter, set_deterministic, join
+from models import initialize_mdsa2
 from matplotlib.widgets import Slider
 import matplotlib.pyplot as plt
 
@@ -142,6 +136,8 @@ class TestMDSA2:
     def test_onepass(use_unet=False):
         model_config = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
         model_config = OmegaConf.load(model_config)
+        model_config.config_folder = "sam2_tenfold"
+        model_config.fold_eval = 0
         mdsa2, train_loader, val_loader = initialize_mdsa2(model_config, use_unet=use_unet)
         
         mdsa2_averagemeter = AverageMeter(name="mdsa2")

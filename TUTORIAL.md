@@ -14,7 +14,7 @@ pip install -r requirements.txt
 **3. install dependencies for the segment anything 2**
 ```
 cd [base_folder]/MDSA2/segment_anything_2
-pip install -e .
+pip install --no-build-isolation -e .
 ```
 resolving the max int problem: https://github.com/rcremese/MONAI/commit/41076d16e988d46b75331141aa965cbd1948d3bf
 

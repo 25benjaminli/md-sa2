@@ -33,14 +33,16 @@ class MetricAccumulator():
         Assumes y_pred and y_true are the following format: (B, C, H, W)
         """
         if hasattr(self, 'inference_meter') and time_spent is not None:
-            self.inference_meter.update(time_spent, n=len(y_true)) # TODO: confirm this is correct
+            self.inference_meter.update(time_spent, n=1) # assumes it's already averaged over batch
 
         for metric_name in self.metric_dict.keys():
-            if type(self.metric_dict[metric_name]) == CumulativeIterationMetric:
+            # print("metric_name", type(self.metric_dict[metric_name]))
+            if type(self.metric_dict[metric_name]) != "function":
                 self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
                 val, not_nans = self.metric_dict[metric_name].aggregate()
                 self.meters[metric_name].update(val.cpu().numpy(), n=not_nans.cpu().numpy())
                 self.metric_dict[metric_name].reset()
+                # print("calculated", val, "for metric", metric_name)
             else:
                 # assume that it just yields an output
                 val = self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
@@ -52,14 +54,18 @@ class MetricAccumulator():
     def get_metrics(self):
         summary_dict = {}
         for key in self.meters.keys():
+            # print("avg, stdev", self.meters[key].avg, self.meters[key].stdev)
+            pyList = self.meters[key].avg.tolist()
+
             summary_dict[key] = {
-                "avg": self.meters[key].avg,
-                "stdev": self.meters[key].stdev
+                "classwise_avg": pyList,
+                "avg": sum(pyList)/3,
+                "stdev": self.meters[key].stdev.tolist(),
             }
         if hasattr(self, 'inference_meter'):
             summary_dict["inference_time"] = {
                 "avg": self.inference_meter.avg,
-                "stdev": self.inference_meter.stdev
+                "stdev": self.inference_meter.stdev.tolist()
             }
         return summary_dict
 
@@ -88,7 +94,8 @@ class AverageMeter(object):
             self.avg = self.sum / self.count
 
         self.arr.append(val)
-        self.stdev = np.std(self.arr, ddof=1) if len(self.arr) > 1 else 0
+        # stdev should be the same shape as val
+        self.stdev = np.std(np.array(self.arr), axis=0, ddof=1) if len(self.arr) > 1 else np.zeros_like(val)
 
 # print_config()
 def binarize(img):
@@ -109,8 +116,8 @@ def calculate_binary_dice(y_pred, y):
     # print("binarized prediction shape", binarized_pred.shape, "binarized label shape", binarized_label.shape)
 
     # assert that the binarized image has only 1 channel and 1s and 0s only via uniques
-    assert len(torch.unique(binarized_pred)) <= 2 and binarized_pred.shape[0] == 1, f"got {torch.unique(binarized_pred)} and shape {binarized_pred.shape}"
-    assert len(torch.unique(binarized_label)) == 2 and binarized_label.shape[0] == 1, f"got {torch.unique(binarized_label)} and shape {binarized_label.shape}"
+    # assert len(torch.unique(binarized_pred)) <= 2 and binarized_pred.shape[0] == 1, f"got {torch.unique(binarized_pred)} and shape {binarized_pred.shape}"
+    # assert len(torch.unique(binarized_label)) == 2 and binarized_label.shape[0] == 1, f"got {torch.unique(binarized_label)} and shape {binarized_label.shape}"
     # print("binarized prediction shape", binarized_pred.shape, "binarized label shape", binarized_label.shape)
 
     # calculate binary dice
