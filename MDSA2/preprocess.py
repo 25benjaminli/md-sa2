@@ -9,8 +9,6 @@ from dotenv import load_dotenv
 from utils import join
 
 load_dotenv(override=True)
-    
-
 
 if __name__ == '__main__':
 
@@ -36,6 +34,7 @@ if __name__ == '__main__':
     config_final.dataset = "brats_africa"
 
     config_final.sam_ckpt = join(os.getenv('PROJECT_PATH', ""),"MDSA2", config_final.sam_ckpt)
+<<<<<<< HEAD
     
     if config_final.ft_ckpt != None:
         print("*******fine-tuned ckpt", config_final.ft_ckpt)
@@ -43,6 +42,12 @@ if __name__ == '__main__':
     else:
         print("*******fine-tuned ckpt", config_final.ft_ckpt)
         config_final.ft_ckpt = None
+=======
+    print("*******fine-tuned ckpt", config_final.ft_ckpt)
+    
+    if config_final.ft_ckpt != None:
+        config_final.ft_ckpt = join(os.getenv('PROJECT_PATH', ""),"MDSA2",config_final.ft_ckpt)
+>>>>>>> 153fb48585b63ba853aba314f1eada1740970d6b
     
     set_deterministic(config_final.seed)
     

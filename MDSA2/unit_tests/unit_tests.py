@@ -27,14 +27,14 @@ import numpy as np
 import os
 from data_utils import get_dataloaders
 from omegaconf import OmegaConf
-from pipeline import MDSA2
+from MDSA2.eval.eval_mdsa2 import MDSA2
 from monai.inferers import sliding_window_inference
 from functools import partial
 from monai.networks.nets import DynUNet
 
 from metrics import MetricAccumulator, calculate_binary_dice
 from utils import register_net_sam2, generate_rndm_path, AverageMeter, visualize_3D_volumes, set_deterministic, join
-from pipeline import MDSA2, initialize_mdsa2
+from MDSA2.eval.eval_mdsa2 import MDSA2, initialize_mdsa2
 from matplotlib.widgets import Slider
 import matplotlib.pyplot as plt
 

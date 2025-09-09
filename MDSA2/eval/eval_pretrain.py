@@ -96,8 +96,6 @@ def eval_model(model, val_loader, config):
 
         print("image shape", image.shape, "label shape", label.shape)
 
-
-        
         
         for current_slice in range(image.shape[4]):
             image_sliced, label_sliced = image[...,current_slice], label[...,current_slice]

@@ -1,3 +1,8 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 import torch.nn as nn
 import torch
 import numpy as np
@@ -9,15 +14,10 @@ from monai.transforms import (
 )
 from monai.metrics import DiceMetric, MeanIoU, HausdorffDistanceMetric
 import argparse
-import os
 from data_utils import get_dataloaders
 from utils import register_net_sam2, set_deterministic
-from functools import partial
-from monai.inferers import sliding_window_inference
 from omegaconf import OmegaConf
-from monai.networks.nets import DynUNet
 from metrics import AverageMeter, MetricAccumulator
-import matplotlib.pyplot as plt
 import gc
 import json
 from collections import OrderedDict
