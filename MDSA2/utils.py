@@ -30,6 +30,8 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 # os.getenv("DATASET_PATH") = os.path.join(os.getenv("PROJECT_PATH"), 'data', 'brats', 'BraTS2020_TrainingData', 'MICCAI_BraTS2020_TrainingData')
+def join(*paths):
+   return os.path.normpath(os.path.join(*paths))
 
 def visualize_3D_volumes(names_to_volumes, names_to_labels, names_to_preds):
   """
@@ -353,7 +355,7 @@ def print_avgmeters(message, *args):
 def save_checkpoint(model, epoch, filename="model_aggregator.pt", best_acc=0, dir_add='../checkpoints'):
     state_dict = model.state_dict()
     save_dict = {"epoch": epoch, "best_acc": best_acc, "state_dict": state_dict}
-    filename = os.path.join(dir_add, filename)
+    filename = join(dir_add, filename)
     torch.save(save_dict, filename)
     print("Saving checkpoint", filename)
 
@@ -470,7 +472,7 @@ def generate_rndm_path(base_path, make_downstream_folder=True, length=10):
       os.makedirs(base_path)
       return base_path
   if make_downstream_folder:
-    l = os.path.join(base_path, ''.join(random.choices(string.ascii_lowercase + string.digits, k=length)))
+    l = join(base_path, ''.join(random.choices(string.ascii_lowercase + string.digits, k=length)))
   else:
     l = base_path + '_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
   if os.path.exists(l):

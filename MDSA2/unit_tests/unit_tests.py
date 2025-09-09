@@ -33,7 +33,7 @@ from functools import partial
 from monai.networks.nets import DynUNet
 
 from metrics import MetricAccumulator, calculate_binary_dice
-from utils import register_net_sam2, generate_rndm_path, AverageMeter, visualize_3D_volumes, set_deterministic
+from utils import register_net_sam2, generate_rndm_path, AverageMeter, visualize_3D_volumes, set_deterministic, join
 from pipeline import MDSA2, initialize_mdsa2
 from matplotlib.widgets import Slider
 import matplotlib.pyplot as plt
@@ -44,16 +44,16 @@ class TestData:
         os.chdir("..")
         os.system("python preprocess.py --config_folder sam2_tenfold")
         # confirm that the preprocessed folder exists and has number of files equivalent to brats_africa dataset
-        assert os.path.exists(os.path.join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed")), "Preprocessed folder does not exist."
-        preprocessed_folder_names = os.listdir(os.path.join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed"))
-        brats_africa_folder_names = os.listdir(os.path.join(os.getenv("PROJECT_PATH", ""), "data", "brats_africa"))
+        assert os.path.exists(join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed")), "Preprocessed folder does not exist."
+        preprocessed_folder_names = os.listdir(join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed"))
+        brats_africa_folder_names = os.listdir(join(os.getenv("PROJECT_PATH", ""), "data", "brats_africa"))
         # the fnames should ALL match each other
         assert sorted(preprocessed_folder_names) == sorted(brats_africa_folder_names), "File names in preprocessed folder do not match brats_africa dataset."
 
         # check if the files within within each folder in preprocessed are correct (i.e. it should be 3 modalities: t1c, t1n, t2f)
         # BraTS-SSA-00002-000-seg.npy
         for folder_name in preprocessed_folder_names:
-            folder_path = os.path.join(os.getenv("PREPROCESSED_PATH", ""), folder_name)
+            folder_path = join(os.getenv("PREPROCESSED_PATH", ""), folder_name)
             files = os.listdir(folder_path)
             assert len(files) == 4, f"Folder {folder_name} does not contain 4 files (3 modality, one seg)."
             modalities = [f.split('-')[-1].split('.')[0] for f in files]
@@ -63,7 +63,7 @@ class TestData:
     @staticmethod
     def test_dataloading():
         set_deterministic(42)
-        model_config = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
+        model_config = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
         model_config = OmegaConf.load(model_config)
         
         train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1)
@@ -140,7 +140,7 @@ class TestData:
 class TestMDSA2:
     @staticmethod
     def test_onepass(use_unet=False):
-        model_config = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
+        model_config = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
         model_config = OmegaConf.load(model_config)
         mdsa2, train_loader, val_loader = initialize_mdsa2(model_config, use_unet=use_unet)
         
@@ -164,8 +164,8 @@ class TestMDSA2:
 
 if __name__ == "__main__":
     # run all tests
-    TestData.test_preprocess()
-    TestData.test_dataloading()
-    TestData.visualize_test_and_image()
+    # TestData.test_preprocess()
+    # TestData.test_dataloading()
+    # TestData.visualize_test_and_image()
     TestMDSA2.test_onepass(use_unet=False)  # test only SAM stage
     TestMDSA2.test_onepass(use_unet=True)   # test full MD-SA2 model

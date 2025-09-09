@@ -214,7 +214,7 @@ def get_val_dataloader(config, use_preprocessed=False):
     )
     # ! TODO: change learning rate
     
-    json_path = os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json") if not use_preprocessed else os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "train_preprocessed.json")
+    json_path = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
     dataset_path = os.getenv("DATASET_PATH") if not use_preprocessed else os.getenv("PREPROCESSED_PATH")
     
     train_files, validation_files = datafold_read(dataset_path=dataset_path, fold_val=config.fold_val, fold_train=config.fold_train,

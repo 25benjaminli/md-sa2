@@ -6,7 +6,7 @@ import sys
 
 sys.path.append('..')
 
-from utils import set_deterministic
+from utils import set_deterministic, join
 from data_utils import generate_json
 
 sys.path.append('./train')
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     # load config
     print("GENERATING JSON WITH CONFIG: ", args.config_folder)
-    config = OmegaConf.load(open(os.path.join('config', args.config_folder, 'config_train.yaml'), 'r'))
+    config = OmegaConf.load(open(join('config', args.config_folder, 'config_train.yaml'), 'r'))
 
     set_deterministic(config.seed)
     if args.use_preprocessed:
@@ -35,6 +35,8 @@ if __name__ == '__main__':
     else:
         dataset_path = os.getenv("DATASET_PATH")
         ending = "nii.gz"
+
+    print("dataset path", dataset_path)
 
     di, fold_data_orig = generate_json(dataset_path=dataset_path, modalities=config.modalities, fold_num=config.fold_num, \
                         seg_key='seg', config=config, ending=ending) # only use three modalities, each fold is 369/16=23

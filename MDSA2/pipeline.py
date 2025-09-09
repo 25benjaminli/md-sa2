@@ -20,9 +20,8 @@ from metrics import AverageMeter, MetricAccumulator
 import matplotlib.pyplot as plt
 import gc
 import json
-import resource
 from collections import OrderedDict
-from utils import generate_rndm_path
+from utils import generate_rndm_path, join
 from typing import Tuple
 from unet_models import UNetWrapper
 import yaml
@@ -89,26 +88,26 @@ class MDSA2(nn.Module):
             self.metric_accumulator_mdsa2.update(y_pred=val_outputs[case].unsqueeze(0), y_true=label[case].unsqueeze(0))
             
             if save_path is not None:
-                save_path = os.path.join(save_path)
+                save_path = join(save_path)
                 os.makedirs(save_path, exist_ok=True)
                 curr_dice = self.metric_accumulator.meters["dice"].cache[-1] # get the most recent dice value
                 
                 fname = f"{volume_name[case]}_fold_{self.config.fold_val[0]}_{curr_dice}.npy"
                 arr_np = val_outputs[case].unsqueeze(0).detach().cpu().numpy()
                 
-                np.save(os.path.join(save_path, fname), arr_np)
+                np.save(join(save_path, fname), arr_np)
         
         return self.metric_accumulator_sa2.get_metrics(), self.metric_accumulator_mdsa2.get_metrics() if self.unet_model else {}
 
 def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
     train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1)
 
-    path_thing = os.path.join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_eval}")
+    path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_eval}")
 
-    model_config.ft_ckpt = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train", "runs", "brats_africa", path_thing, "best_model_sam2.pth")
+    model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train", "runs", "brats_africa", path_thing, "best_model_sam2.pth")
     model_config.batch_size_train=1 # manually set to 1 for comparison
     model_config.batch_size_val=1 # manually set to 1 for comparison
-    model_config.snapshot_path = generate_rndm_path(os.path.join("eval", "runs", "aggregator"))
+    model_config.snapshot_path = generate_rndm_path(join("eval", "runs", "aggregator"))
 
     assert os.path.exists(model_config.ft_ckpt), f"fine tuned ckpt {model_config.ft_ckpt} does not exist"
     print("model checkpoint", model_config.ft_ckpt)
@@ -116,7 +115,7 @@ def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.da
     sam2 = register_net_sam2(model_config)
 
     # yeah... this is pretty ugly
-    volumes_to_collect = yaml.load(open(os.path.join(os.getenv("PROJECT_PATH", ""), "volumes_to_collect.yaml"), 'r'), Loader=yaml.FullLoader)
+    volumes_to_collect = yaml.load(open(join(os.getenv("PROJECT_PATH", ""), "volumes_to_collect.yaml"), 'r'), Loader=yaml.FullLoader)
     config = OmegaConf.create({
         "model_type": "DynUNet",
         "use_ref_volume": True,
@@ -230,7 +229,7 @@ if __name__ == "__main__":
     args.sw_batch_size = 1
     args.infer_overlap = 0.5
 
-    model_config = os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "config", args.config_folder, "config_train.yaml")
+    model_config = join(os.getenv("PROJECT_PATH"), "MDSA2", "config", args.config_folder, "config_train.yaml")
     model_config = OmegaConf.load(model_config)
     model_config.save_volumes = args.save_volumes.split(",") if len(args.save_volumes) > 0 else []
 

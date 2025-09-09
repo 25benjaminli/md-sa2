@@ -19,6 +19,7 @@ from functools import partial
 from monai.inferers import sliding_window_inference
 from utils import generate_rndm_path
 import torch.nn as nn
+from utils import join
 
 class UNetWrapper():
     """
@@ -58,7 +59,7 @@ class UNetWrapper():
         # add "u_net" in front of the last part of the path
         base, fname = os.path.split(save_path)
         fname = f"{self.config.model_name}_{fname}"
-        save_path = os.path.join(base, fname)
+        save_path = join(base, fname)
         os.makedirs(save_dir, exist_ok=True)
         torch.save(self.model.state_dict(), save_path)
         print(f"Model weights saved for epoch {epoch}")
@@ -136,9 +137,9 @@ class UNetWrapper():
                 if self.config.fold_val[0] in self.config.volumes_to_collect.keys():
                     if batch_data["image_title"][0] in self.config.volumes_to_collect[self.config.fold_val[0]]:
                         # print("saving volume", batch_data["image_title"][0], val_output_convert[0].shape)
-                        predictions_base = os.path.join(os.getenv("PROJECT_PATH", ""),"extra_software", "visualization", "volumes", "aggregator")
+                        predictions_base = join(os.getenv("PROJECT_PATH", ""),"extra_software", "visualization", "volumes", "aggregator")
                         os.makedirs(predictions_base, exist_ok=True)
-                        np.save(os.path.join(predictions_base, f"{batch_data['image_title'][0]}_fold_{self.config.fold_val[0]}.npy"), post_output[0])
+                        np.save(join(predictions_base, f"{batch_data['image_title'][0]}_fold_{self.config.fold_val[0]}.npy"), post_output[0])
 
                 del data, target, logits, val_labels_list, val_outputs_list, post_output
 
