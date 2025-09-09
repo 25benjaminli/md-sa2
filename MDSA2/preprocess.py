@@ -6,10 +6,9 @@ from data_utils import preprocess
 import os
 from omegaconf import OmegaConf
 from dotenv import load_dotenv
+from utils import join
 
 load_dotenv(override=True)
-    
-
 
 if __name__ == '__main__':
 
@@ -21,27 +20,24 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # first, generate the json
-    os.chdir(os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
+    os.chdir(join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
     os.system("python generate_json.py --config_folder " + args.config_folder)
 
 
     # load config
     print("-------------- USING CONFIG: ", args.config_folder)
-    config_final = OmegaConf.load(open(os.path.join('config', args.config_folder, 'config_train.yaml'), 'r'))
-    details = OmegaConf.load(open(os.path.join('config', args.config_folder, 'details.yaml'), 'r'))
+    config_final = OmegaConf.load(open(join('config', args.config_folder, 'config_train.yaml'), 'r'))
+    details = OmegaConf.load(open(join('config', args.config_folder, 'details.yaml'), 'r'))
 
     # merge details into config_final
     config_final = OmegaConf.merge(config_final, details)
     config_final.dataset = "brats_africa"
 
-    config_final.sam_ckpt = os.path.join(os.getenv('PROJECT_PATH', ""),"MDSA2", config_final.sam_ckpt)
+    config_final.sam_ckpt = join(os.getenv('PROJECT_PATH', ""),"MDSA2", config_final.sam_ckpt)
+    print("*******fine-tuned ckpt", config_final.ft_ckpt)
     
     if config_final.ft_ckpt != None:
-        print("*******fine-tuned ckpt", config_final.ft_ckpt)
-        config_final.ft_ckpt = os.path.join(os.getenv('PROJECT_PATH', ""),"MDSA2",config_final.ft_ckpt)
-    else:
-        print("*******fine-tuned ckpt", config_final.ft_ckpt)
-        config_final.ft_ckpt = None
+        config_final.ft_ckpt = join(os.getenv('PROJECT_PATH', ""),"MDSA2",config_final.ft_ckpt)
     
     set_deterministic(config_final.seed)
     
@@ -54,10 +50,10 @@ if __name__ == '__main__':
         shutil.rmtree(os.getenv("PREPROCESSED_PATH", ""))
 
     preprocess(config_final, use_normalize=not args.no_normalize)
-    os.chdir(os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
+    os.chdir(join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
 
     # run generate json script
     os.system("python generate_json.py --config_folder " + args.config_folder + " --use_preprocessed")
 
     config_final = OmegaConf.merge(OmegaConf.create({"config_folder": args.config_folder}), config_final)
-    OmegaConf.save(config_final, os.path.join(os.getenv("DATA_PATH", ""), 'current_data_config.yaml'))
+    OmegaConf.save(config_final, join(os.getenv("DATA_PATH", ""), 'current_data_config.yaml'))

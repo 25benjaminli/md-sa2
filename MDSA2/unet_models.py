@@ -19,6 +19,7 @@ from functools import partial
 from monai.inferers import sliding_window_inference
 from utils import generate_rndm_path
 import torch.nn as nn
+from utils import join
 
 class UNetWrapper():
     """
@@ -26,7 +27,7 @@ class UNetWrapper():
     model with support for "reference volumes" and custom metric accumulation. 
     """
     def __init__(self, train_loader, val_loader,
-                  loss_func, scaler, optimizer,
+                  loss_func, use_scaler, optimizer,
                  config, **model_params):
         
         if config.model_type == "UNet":
@@ -37,9 +38,18 @@ class UNetWrapper():
 
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.loss_func = loss_func
-        self.scaler = scaler
-        self.optimizer = optimizer
+        
+        if loss_func == "Dice":
+            self.loss_func = DiceLoss(to_yonehot=False, sigmoid=True)
+
+        if use_scaler:
+            self.scaler = torch.cuda.amp.GradScaler(enabled=True)
+
+        if optimizer == "AdamW":
+            self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3,
+                                               weight_decay=1e-4)
+        
+        
         self.config = config
         self.metric_accumulator = MetricAccumulator(
             additional_metrics={
@@ -58,18 +68,17 @@ class UNetWrapper():
         # add "u_net" in front of the last part of the path
         base, fname = os.path.split(save_path)
         fname = f"{self.config.model_name}_{fname}"
-        save_path = os.path.join(base, fname)
+        save_path = join(base, fname)
         os.makedirs(save_dir, exist_ok=True)
         torch.save(self.model.state_dict(), save_path)
         print(f"Model weights saved for epoch {epoch}")
 
-    def train_epoch(self, epoch):
+    def train_epoch(self):
         self.model.train()
         run_loss = AverageMeter('run loss')
         device = torch.device("cuda:0")
-        start_time = time.time()
 
-        for idx, batch_data in enumerate(self.train_loader):
+        for idx, batch_data in enumerate(self.train_loader): # TQDM? 
             data, target = batch_data["image"].to(device), batch_data["label"].to(device)
             if self.config.use_ref_volume:
                 ref_volume = batch_data["ref_volume"].to(device)
@@ -92,15 +101,9 @@ class UNetWrapper():
 
             del data, target, logits, loss
 
-        print(
-        "Epoch {}/{} {}/{}".format(epoch, self.config.max_epochs, idx, len(self.train_loader)),
-        "loss: {:.4f}".format(run_loss.avg),
-        "time {:.2f}s".format(time.time() - start_time),
-        )
-
         return run_loss.avg
     
-    def validate_epoch(self, epoch):
+    def validate_epoch(self):
         self.model.eval()
         
         self.model_inferer = partial(
@@ -112,7 +115,6 @@ class UNetWrapper():
         )
 
         device = torch.device("cuda:0")
-        print("starting validation for epoch", epoch)
 
         inference_durations = []
 
@@ -136,18 +138,13 @@ class UNetWrapper():
                 if self.config.fold_val[0] in self.config.volumes_to_collect.keys():
                     if batch_data["image_title"][0] in self.config.volumes_to_collect[self.config.fold_val[0]]:
                         # print("saving volume", batch_data["image_title"][0], val_output_convert[0].shape)
-                        predictions_base = os.path.join(os.getenv("PROJECT_PATH", ""),"extra_software", "visualization", "volumes", "aggregator")
+                        predictions_base = join(os.getenv("PROJECT_PATH", ""),"extra_software", "visualization", "volumes", "aggregator")
                         os.makedirs(predictions_base, exist_ok=True)
-                        np.save(os.path.join(predictions_base, f"{batch_data['image_title'][0]}_fold_{self.config.fold_val[0]}.npy"), post_output[0])
+                        np.save(join(predictions_base, f"{batch_data['image_title'][0]}_fold_{self.config.fold_val[0]}.npy"), post_output[0])
 
                 del data, target, logits, val_labels_list, val_outputs_list, post_output
 
-        # save json
-        final_metrics = self.metric_accumulator.get_metrics()
-        with open(f"json_metrics_{self.config.model_name}.json", "w") as f:
-            json.dump(final_metrics, f, indent=4)
-
-        return final_metrics
+        return self.metric_accumulator.get_metrics()
     
     @torch.no_grad()
     def run(self, batch):

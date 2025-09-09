@@ -43,7 +43,7 @@ from monai.transforms.intensity.dictionary import (
 from monai.transforms.croppad.dictionary import (
     CenterSpatialCropd, CropForegroundd, RandSpatialCropd
 )
-from utils import get_volume_number
+from utils import get_volume_number, join, set_deterministic
 
 load_dotenv(override=True)
 
@@ -73,7 +73,7 @@ def generate_pseudo_files(di, fold_val):
     # base_data_dir = os.path.basename(os.path.normpath(os.getenv('DATASET_PATH')))
     
     base_data_dir = os.getenv("DATA_PATH")
-    # new_path = os.path.join(base_data_dir, 'pseudo_val_volumes')
+    # new_path = join(base_data_dir, 'pseudo_val_volumes')
 
     # print("new path", new_path)
     print("GENERATING PSEUDO FILES")
@@ -93,7 +93,7 @@ def generate_pseudo_files(di, fold_val):
 
             seg_path = replace_ending(patient['label'], endings)
             seg = segmentation[...,indices_non_zero]
-            np.save(os.path.join(seg_path), seg) # save as nii?
+            np.save(join(seg_path), seg) # save as nii?
             di['training'][idx_patient]['label'] = seg_path
             assert os.path.exists(seg_path)
 
@@ -684,7 +684,7 @@ def preprocess(config, use_normalize=True):
         ]
     )
 
-    json_path = os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json")
+    json_path = join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json")
     
     train_files, validation_files = datafold_read(dataset_path=os.getenv("DATASET_PATH"), fold_val=config.fold_val, fold_train=config.fold_train,
                                                               modalities=config.modalities, json_path=json_path)
@@ -770,7 +770,7 @@ def get_dataloaders(config, use_preprocessed=False, modality_to_repeat=-1):
     )
     # ! TODO: change learning rate
     
-    json_path = os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json") if not use_preprocessed else os.path.join(os.getenv("PROJECT_PATH"), "MDSA2", "train_preprocessed.json")
+    json_path = join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json")
     dataset_path = os.getenv("DATASET_PATH") if not use_preprocessed else os.getenv("PREPROCESSED_PATH")
     print("modalities", config.modalities)
     train_files, validation_files = datafold_read(dataset_path=dataset_path, fold_val=config.fold_val, fold_train=config.fold_train,
@@ -798,7 +798,7 @@ def get_dataloaders(config, use_preprocessed=False, modality_to_repeat=-1):
 
 def generate_folds_aggregator(direc, fold_train, fold_val, modalities, use_ref_volume=False):
     
-    json_path = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
+    json_path = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
     train_files, validation_files = datafold_read(
         dataset_path=os.getenv("DATASET_PATH"),
         fold_val=fold_val,
@@ -817,11 +817,11 @@ def generate_folds_aggregator(direc, fold_train, fold_val, modalities, use_ref_v
 
     def create_file_paths(num, use_ref_volume):
         base = {
-            "image": os.path.join(direc, f"pred_{num}.npy"),
-            "label": os.path.join(direc, f"label_{num}.npy"),
+            "image": join(direc, f"pred_{num}.npy"),
+            "label": join(direc, f"label_{num}.npy"),
         }
         if use_ref_volume:
-            base["ref_volume"] = os.path.join(direc, f"brain_volume_{num}.npy")
+            base["ref_volume"] = join(direc, f"brain_volume_{num}.npy")
         return base
 
 
@@ -918,6 +918,86 @@ def get_aggregator_loader(batch_size, roi=(128,128,128), direc='./output_volumes
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
+        pin_memory=True,
+    )
+
+    return train_loader, val_loader
+
+
+def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalities=['t2f', 't1c', 't1n']):
+    # datalist_json = json_list
+
+    train_transform = transforms.Compose(
+        [
+            AddNameField(keys=["image", "label"]),
+            transforms.LoadImaged(keys=["image", "label"]),
+            # transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
+            ConvertToMultiChannel(keys="label"),
+            transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=[224,224,-1]),
+            transforms.Resized(keys=["image", "label"], spatial_size=(384,384,-1), mode=("bilinear", "nearest-exact")),
+
+            transforms.RandZoomd(keys=["image", "label"], prob=0.2, min_zoom=0.9, max_zoom=1.1, mode="nearest-exact"),
+
+            transforms.CropForegroundd(
+                keys=["image", "label"],
+                source_key="image",
+                k_divisible=[roi[0], roi[1], roi[2]],
+            ),
+            transforms.RandSpatialCropd(
+                keys=["image", "label"],
+                roi_size=[roi[0], roi[1], roi[2]],
+                random_size=False,
+            ),
+            transforms.RandFlipd(keys=["image", "label"], prob=0.3, spatial_axis=0),
+            transforms.RandFlipd(keys=["image", "label"], prob=0.3, spatial_axis=1),
+            transforms.RandFlipd(keys=["image", "label"], prob=0.3, spatial_axis=2),
+
+            # ! APPLY ZOOM
+            transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+            transforms.RandScaleIntensityd(keys="image", factors=0.5, prob=0.3, channel_wise=True),
+            transforms.RandShiftIntensityd(keys="image", offsets=0.5, prob=0.3, channel_wise=True),
+        ]
+    )
+    val_transform = transforms.Compose(
+        [
+            AddNameField(keys=["image", "label"]),
+            transforms.LoadImaged(keys=["image", "label"]),
+            # transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
+            ConvertToMultiChannel(keys="label"),
+            # crop image and label center
+            transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=[224,224,-1]),
+            transforms.Resized(keys=["image", "label"], spatial_size=(384,384,-1), mode=("bilinear", "nearest-exact")),
+            transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+        ]
+    )
+
+    set_deterministic(seed=1234)
+
+    json_path = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
+    # print("MODALITIES", modalities)
+    
+    train_files, validation_files = datafold_read(dataset_path=os.getenv("DATASET_PATH"), fold_val=fold_val, fold_train=fold_train,
+                                                              modalities=modalities, json_path=json_path)
+    
+    print("length of train files", len(train_files), len(validation_files))
+    # print("first few train files", train_files[:3])   
+    # train with 4 mods and see what happens
+
+    train_ds = monai.data.Dataset(data=train_files, transform=train_transform)
+
+    train_loader = monai.data.DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True, # turn off pin memoyr?
+    )
+    val_ds = monai.data.Dataset(data=validation_files, transform=val_transform)
+    val_loader = monai.data.DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
         pin_memory=True,
     )
 

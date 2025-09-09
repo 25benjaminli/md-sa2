@@ -13,6 +13,8 @@ MDSA2/eval/predictions
 MDSA2/checkpoints/model_aggregator.pt
 MDSA2/checkpoints/best_aggregator.pth
 MDSA2/checkpoints/best_model_sam2*.pth
+MDSA2/train.json
+MDSA2/fold_data.json
 extra_software/visualization/volumes/
 extra_software/visualization/temp/
 
