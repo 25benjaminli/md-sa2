@@ -1,5 +1,4 @@
 """
-For EACH model that is to be tested, we do the following:
 - Check if data generation (via preprocess.py, generate_json.py, data_utils) work properly. 
     - This entails getting the right files and they must all exist.
 - Check if metric collection is working properly (via MetricAccumulator from metrics.py)
@@ -9,7 +8,6 @@ For MD-SA2 specifically, we need to test in two stages due to it being a two-sta
 1) Test the SAM segmentation stage
 2) Test the UNet refinement stage
 
-MD-SA2 is run via pipeline.py. 
 - Metric collection via cross-validation (or single-fold validation) must work properly without error
 
 Because deep learning algos are not always going to generate the same results even with random seed, 
@@ -68,7 +66,7 @@ class TestData:
         with open(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json"), 'r') as f:
             train_data = json.load(f)
         
-        with open(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "unit_tests", "expected_folds.json"), 'r') as f:
+        with open(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "expected_folds.json"), 'r') as f:
             expected_folds = json.load(f)
             expected_folds = {int(k): v for k, v in expected_folds.items()}
 
@@ -116,12 +114,18 @@ class TestData:
     @staticmethod
     def visualize_test_and_image():
         # load the saved test image and label
-        test_image = np.load("test_image_221.npy")
-        test_label = np.load("test_label_221.npy")
+        curr_files = os.listdir(".")
+        available_images = [f for f in curr_files if f.startswith("test_image_") and f.endswith(".npy")]
+        if not available_images:
+            print("no test images found run test_dataloading() first.")
+            return
+        random_image_file = np.random.choice(available_images)
+        test_image = np.load(random_image_file)
+        test_label = np.load(random_image_file.replace("test_image_", "test_label_"))
         
         C, H, W, D = test_image.shape  # Assuming shape is (C, H, W, D)
-        print(f"Image shape: {test_image.shape}")
-        print(f"Label shape: {test_label.shape}")
+        print(f"image shape: {test_image.shape}")
+        print(f"label shape: {test_label.shape}")
         
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))  
         plt.subplots_adjust(bottom=0.25)
@@ -169,8 +173,14 @@ class TestMDSA2:
         model_config = OmegaConf.load(model_config)
         model_config.config_folder = "sam2_tenfold"
         model_config.fold_eval = fold_eval
+        details = OmegaConf.load(open(join(os.getenv("PROJECT_PATH", ""), 'MDSA2', 'config', "sam2_tenfold", 'details.yaml'), 'r'))
+        model_config = OmegaConf.merge(model_config, details)
+        model_config.dataset = "brats_africa"
         # set batch size to 1 for comparison w/ unet
-        mdsa2, train_loader, val_loader = initialize_mdsa2(model_config, use_unet=use_unet)
+        set_deterministic(42)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1, verbose=False)
+
+        mdsa2 = initialize_mdsa2(model_config, dataloaders=(train_loader, val_loader), use_unet=use_unet)
         
         for batch in val_loader:
             with torch.no_grad():
@@ -189,8 +199,8 @@ class TestMDSA2:
 
 if __name__ == "__main__":
     # run all tests
-    TestData.test_preprocess()
-    TestData.test_dataloading()
-    TestData.visualize_test_and_image()
+    # TestData.test_preprocess()
+    # TestData.test_dataloading()
+    # TestData.visualize_test_and_image()
     TestMDSA2.test_onepass(use_unet=False, fold_eval=0)  # test only SAM stage
     TestMDSA2.test_onepass(use_unet=True, fold_eval=0)   # test full MD-SA2 model

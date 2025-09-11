@@ -43,6 +43,10 @@ if __name__ == "__main__":
         model_config = OmegaConf.load(model_config)
         model_config.config_folder = "sam2_tenfold"
         model_config.fold_val = [fold_val]
+
+        details = OmegaConf.load(open(join(os.getenv("PROJECT_PATH", ""), 'MDSA2', 'config', "sam2_tenfold", 'details.yaml'), 'r'))
+        model_config = OmegaConf.merge(model_config, details)
+        model_config.dataset = "brats_africa"
         # set batch size to 1 for comparison w/ unet
         set_deterministic(42)
         train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1, verbose=False)
@@ -55,8 +59,8 @@ if __name__ == "__main__":
         print("SA2 dice:", metrics_sa2["dice"]["classwise_avg"])
         print("MD-SA2 dice:", metrics_mdsa2["dice"]["classwise_avg"])
 
-        print("SA2 hd95:", metrics_sa2["hd95"]["classwise_avg"])
-        print("MD-SA2 hd95:", metrics_mdsa2["hd95"]["classwise_avg"])
+        # print("SA2 hd95:", metrics_sa2["hd95"]["classwise_avg"])
+        # print("MD-SA2 hd95:", metrics_mdsa2["hd95"]["classwise_avg"])
 
         # send to json
         if args.fold_val != -1:

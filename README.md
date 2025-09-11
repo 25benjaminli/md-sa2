@@ -45,9 +45,9 @@ Go to the unit_tests folder and run unit_tests.py. This is for preprocessing the
 
 **5. comparisons**
 
-Running MD-SA2 on all folds: run `eval/eval_mdsa2.py`. 
+Running MD-SA2 on all folds: go to `eval` folder and run `eval_mdsa2.py`. 
 
-If you want to run baseline U-Net models, visit `eval/eval_unet.py`. The U-net models were trained with different image dimensions (too much memory consumption and time spent with higher dimensions), so ensure that you have run the following prior to running `eval_unet.py`: `python preprocess.py --overrides preprocessing.resize_dims=[224,224] --expected_folds expected_folds.json`. 
+If you want to run baseline U-Net models, run `eval_unet.py`. The U-net models were trained with different image dimensions (too much memory consumption and time spent with higher dimensions), so ensure that you have run the following prior to running `eval_unet.py`: `python preprocess.py --overrides preprocessing.resize_dims=[224,224] --expected_folds expected_folds.json`. If you intend to run MD-SA2 after running U-Net, be sure to rerun the `python preprocess.py` for the dimensions to match up. 
 
 Running other vanilla segment-anything based models detailed in the paper will be available soon. Also, the option to use a low-rank adapted version of SA2 has been included - not originally part of the paper and sparsely tested. 
 

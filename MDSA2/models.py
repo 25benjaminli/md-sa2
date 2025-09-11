@@ -34,8 +34,7 @@ import torch.optim as optim
 import yaml
 from omegaconf import OmegaConf
 from tqdm import tqdm
-
-from utils import set_deterministic
+import monai
 
 class UNetWrapper():
     """
@@ -196,13 +195,24 @@ class MDSA2(nn.Module):
     """
     End-to-end module combining SA2 and U-Net for medical image segmentation. 
     """
-    def __init__(self, sam2_model, unet_model: UNetWrapper, config=None):
+    def __init__(self, sam2_model, unet_model: UNetWrapper, config=None, loss_type="GDF"):
         super().__init__()
         self.sam2_model = sam2_model
         self.unet_model = unet_model
         self.config = config
         self.metric_accumulator_mdsa2 = MetricAccumulator()
         self.metric_accumulator_sa2 = MetricAccumulator()
+
+        loss_functions = {
+            "DCE": monai.losses.DiceCELoss(**config.losses.DCE),
+            "GDF": monai.losses.GeneralizedDiceFocalLoss(**config.losses.GDF),
+            "DL": monai.losses.DiceLoss(**config.losses.DL)
+        }
+        self.loss_func = loss_functions[loss_type]
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.config.use_amp)
+        self.optimizer = optim.AdamW(filter(lambda p: p.requires_grad, self.sam2_model.predictor.model.parameters()),
+                                    lr=self.config.base_lr, **config.optimizers.ADAMW)
+
 
 
     def forward(self, batch, save_path=None):
@@ -245,23 +255,12 @@ class MDSA2(nn.Module):
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
                 val_outputs = self.unet_model.run_batch(batch) # logits shape torch.Size([4, 3, 155, 224, 224])
 
-        # if you desire to visualize vols, uncomment and modify
-        # for case in range(len(arr_pred))
-        #     # save to an np array
-        #     self.metric_accumulator_mdsa2.update(y_pred=val_outputs[case].unsqueeze(0), y_true=label[case].unsqueeze(0))
-
-        #     if save_path is not None:
-        #         save_path = join(save_path)
-        #         os.makedirs(save_path, exist_ok=True)
-        #         curr_dice = self.metric_accumulator.meters["dice"].cache[-1] # get the most recent dice value
-                
-        #         fname = f"{volume_name[case]}_fold_{self.config.fold_val[0]}_{curr_dice}.npy"
-        #         arr_np = val_outputs[case].unsqueeze(0).detach().cpu().numpy()
-                
-        #         np.save(join(save_path, fname), arr_np):
+        # if you desire to visualize vols, you can do soemthing with val_outputs here.
         
         return self.metric_accumulator_sa2.get_metrics(), self.unet_model.metric_accumulator.get_metrics() if self.unet_model else {}
-    
+
+
+# https://github.com/25benjaminli/sam2lora
 class LoRA_SAM2(nn.Module):
     def __init__(self, predictor, r: int, lora_layer=None):
         super(LoRA_SAM2, self).__init__()
@@ -379,7 +378,7 @@ class LoRA_SAM2(nn.Module):
 
 
     def forward(self, image, using_sigmoid=True, return_img_embedding=False, upscale=True):
-        self.predictor.set_image_batch(image) # ! Revisit
+        self.predictor.set_image_batch(image)
         sparse_embeddings, dense_embeddings = self.predictor.model.sam_prompt_encoder(points=None,boxes=None,masks=None)
         high_res_features = [feat_level for feat_level in self.predictor._features["high_res_feats"]]
         # print(self.predictor._features["image_embed"].shape)
@@ -389,7 +388,7 @@ class LoRA_SAM2(nn.Module):
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
             multimask_output=True,
-            repeat_image=True, # ! Revisit
+            repeat_image=True,
             high_res_features=high_res_features,
             using_sigmoid=using_sigmoid
         )
@@ -467,7 +466,7 @@ class SAM2_Regular(nn.Module):
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
             multimask_output=multimask_output,
-            repeat_image=repeat_image, # !
+            repeat_image=repeat_image,
             high_res_features=high_res_features,
             using_sigmoid=using_sigmoid
         )
