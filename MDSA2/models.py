@@ -35,6 +35,8 @@ import yaml
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
+from utils import set_deterministic
+
 class UNetWrapper():
     """
     module for training & validating a UNet 
@@ -81,7 +83,7 @@ class UNetWrapper():
         thing = torch.load(weights_path, weights_only=False)
         if "state_dict" in thing.keys():
             state_dict = thing["state_dict"]
-            print("acc, best epoch", thing["best_acc"])
+            print("loaded u-net:", thing["best_acc"])
         else:
             state_dict = thing
         self.model.load_state_dict(state_dict)
@@ -113,7 +115,7 @@ class UNetWrapper():
 
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
                 logits = self.model(data)
-                loss = self.loss_func(logits, target) # only for unet++
+                loss = self.loss_func(logits, target)
 
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
@@ -184,6 +186,8 @@ class UNetWrapper():
         t_spent = (time.time()-inf)/self.config.batch_size
         val_labels_list = decollate_batch(batch["label"])
         val_outputs_list = decollate_batch(logits)
+
+        
         post_output = [self.post_pred(self.post_sigmoid(val_pred_tensor)) for val_pred_tensor in val_outputs_list]
         self.metric_accumulator.update(y_pred=post_output, y_true=val_labels_list, time_spent=t_spent)
         return post_output
@@ -481,13 +485,11 @@ class SAM2_Regular(nn.Module):
             "prd_scores": prd_scores
         }
 
-# TODO: implement example usage
 
+def initialize_mdsa2(model_config, dataloaders, use_unet=True) -> MDSA2:    
+    train_loader, val_loader = dataloaders
 
-def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
-    train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1)
-
-    path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_eval}")
+    path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_val[0]}")
 
     model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", path_thing, "best_model_sam2.pth")
     model_config.batch_size_train=1 # manually set to 1 for comparison
@@ -538,7 +540,7 @@ def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.da
         use_scaler=False, optimizer=None, config=config, verbose=False, **model_params)
 
         # load aggregator unet weights
-        aggregator_unet.load_weights(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_eval}", "best_model.pth"))
+        aggregator_unet.load_weights(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_val[0]}", "best_model.pth"))
 
     else:
         aggregator_unet = None
@@ -546,4 +548,4 @@ def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.da
     model = MDSA2(sam2, unet_model=aggregator_unet, config=model_config)
     model.eval()
 
-    return model, train_loader, val_loader
+    return model

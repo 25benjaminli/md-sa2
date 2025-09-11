@@ -121,6 +121,7 @@ def ReadImage(path):
     return sitk.GetArrayFromImage(sitk.ReadImage(path))
 
 def set_deterministic(seed):
+  # call this before initializing the dataloaders, ALWAYS
   cudnn.benchmark = False
   cudnn.deterministic = True
 
@@ -447,7 +448,7 @@ def register_net_sam2(model_config):
     if model_config.ft_ckpt is not None:
       net.load_lora_parameters(model_config.ft_ckpt)
   else:
-    print("using regular")
+    # print("using regular")
     net = SAM2_Regular(predictor).cuda() # means you just use the regular one
 
     if model_config.ft_ckpt is not None: # not actually lora, but just the pretrained one...

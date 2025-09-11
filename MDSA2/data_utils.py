@@ -112,10 +112,7 @@ def generate_json(dataset_path, fold_num, config, seg_key='label', modalities=['
 def generate_json_stratify(dataset_path, fold_num, seg_key, modalities):
     df = pd.read_csv(posixpath.join(dataset_path, 'name_mapping.csv'))
 
-    # 369 total files, 41 each fold for 9 total folds
-    # for each fold, proportional amounts of HGG and LGG should be in each fold
-    # 293/9 = 32.55555555555556
-    # 76/9 = 8.444444444444445
+    # for each fold, proportional amounts of HGG and LGG should be in each fold. only useful for regular BraTS datasets where survival info is available
 
     shuff_hgg = df[df['Grade'] == 'HGG'].sample(frac=1, random_state=0).reset_index(drop=True)
     shuff_lgg = df[df['Grade'] == 'LGG'].sample(frac=1, random_state=0).reset_index(drop=True) # deterministic random generation
@@ -209,7 +206,7 @@ def generate_json_no_stratify(dataset_path, fold_num, seg_key='seg', modalities=
     return di, fold_data_orig
     
 
-def datafold_read(dataset_path, fold_train,fold_val, key="training", cap=60, modalities = ['t2f', 't1c', 't1n', 't2w'], json_path='train.json'):
+def datafold_read(fold_train,fold_val, key="training", cap=60, modalities = ['t2f', 't1c', 't1n', 't2w'], json_path='train.json'):
     with open(json_path) as f:
         json_data = json.load(f)
 
@@ -242,6 +239,27 @@ def datafold_read(dataset_path, fold_train,fold_val, key="training", cap=60, mod
     else:
         return tr, val
 
+def load_from_expected_json(json_path, preprocessed=False, modalities=['t2f', 't1c', 't1n'], ending="npy"):
+    di = {"training": []}
+    with open(json_path) as f:
+        json_data = json.load(f)
+    for key in json_data:
+        # each key represents the current fold
+        for element in json_data[key]:
+            # BraTS-SSA-00041-000 is the element. all you do is add the base path to it
+            dataset_path = os.getenv("PREPROCESSED_PATH") if preprocessed else os.getenv("DATASET_PATH")
+            di["training"].append({
+                "image": [
+                    join(dataset_path, element, f"{element}-{modality}.{ending}") for modality in modalities
+                ],
+                "label": join(dataset_path, element, f"{element}-seg.{ending}"),
+                "fold": int(key)
+            })
+
+    # dump to train.json
+    with open(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json"), "w") as f:
+        json.dump(di, f, indent=4)
+    return di
 
 class ConvertToMultiChannel(transforms.transform.MapTransform):
     def __init__(self, keys, allow_missing_keys=False, use_softmax=False):
@@ -346,6 +364,7 @@ class RandomizeSlices(transforms.transform.MapTransform):
 
         return d
 
+# NOTE: these samplers are not currently used in training and not well tested, feel free to play around with them.
 class CurriculumSampler(BatchSampler):
     def __init__(self, dataset, reverse=True, batch_size=2, epochs=50, grow_epochs=5, start_rate=0.1):
         self.dataset = dataset
@@ -571,7 +590,7 @@ def preprocess(config, use_normalize=True):
 
     json_path = join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json")
     
-    train_files, validation_files = datafold_read(dataset_path=os.getenv("DATASET_PATH"), fold_val=config.fold_val, fold_train=config.fold_train,
+    train_files, validation_files = datafold_read(fold_val=config.fold_val, fold_train=config.fold_train,
                                                               modalities=config.modalities, json_path=json_path)
 
 
@@ -645,17 +664,16 @@ def get_dataloaders(config, use_preprocessed=False, verbose=False, modality_to_r
             ToTensord(keys=["image", "label"], track_meta=False),
         ]
     )
-    # ! TODO: change learning rate
     
     json_path = join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json")
-    dataset_path = os.getenv("DATASET_PATH") if not use_preprocessed else os.getenv("PREPROCESSED_PATH")
-    train_files, validation_files = datafold_read(dataset_path=dataset_path, fold_val=config.fold_val, fold_train=config.fold_train,
+
+    train_files, validation_files = datafold_read(fold_val=config.fold_val, fold_train=config.fold_train,
                                                               modalities=config.modalities, json_path=json_path)
     
     if verbose:
         print("modalities", config.modalities)
         print("length of train, validation files", len(train_files), len(validation_files))
-        print("first train", train_files[0])
+        print("first two valids", validation_files[:2])
     
     file_paths = {
         "train": train_files,
@@ -675,7 +693,6 @@ def generate_folds_aggregator(direc, fold_train, fold_val, modalities, use_ref_v
     
     json_path = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
     train_files, validation_files = datafold_read(
-        dataset_path=os.getenv("DATASET_PATH"),
         fold_val=fold_val,
         fold_train=fold_train,
         modalities=modalities,
@@ -731,69 +748,6 @@ class Transpose_Transform(transforms.transform.MapTransform):
         return d
 
 
-def get_aggregator_loader(batch_size, roi=(128,128,128), direc='./output_volumes', num_workers=0,
-                          modalities=['t2f', 't1c', 't1n'],
-                            fold_train=[0], fold_val=[1], use_ref_volume=False):
-    from utils import set_deterministic
-
-    set_deterministic(seed=1234)
-    train_files, validation_files = generate_folds_aggregator(
-        direc, fold_train, fold_val, modalities, use_ref_volume)
-    
-    image_label_arr = ["image", "label"] if not use_ref_volume else ["image", "label", "ref_volume"]
-    
-
-    train_transform = Compose(
-        [
-            AddNameFieldAggregator(keys=image_label_arr, send_real_path=False),
-            LoadImaged(keys=image_label_arr),
-            # Transpose_Transform(keys=image_label_arr),
-            # EnsureChannelFirstd(keys=image_label_arr),
-            CropForegroundd(
-                keys=image_label_arr,
-                source_key="image",
-                k_divisible=[roi[0], roi[1], roi[2]],
-            ),
-            RandSpatialCropd(
-                keys=image_label_arr,
-                roi_size=[roi[0], roi[1], roi[2]],
-                random_size=False,
-            ),
-            RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=0),
-            RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=1),
-            RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=2),
-            # rand zoom
-            RandZoomd(keys=image_label_arr, prob=0.3, min_zoom=0.8, max_zoom=1.2),
-            
-        ]
-    )
-    val_transform = transforms.compose.Compose(
-        [
-            AddNameFieldAggregator(keys=image_label_arr, send_real_path=False),
-            LoadImaged(keys=image_label_arr),
-        ]
-    )
-    train_ds = monai.data.Dataset(data=train_files, transform=train_transform)
-    
-
-    train_loader = monai.data.DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-    val_ds = monai.data.Dataset(data=validation_files, transform=val_transform)
-    val_loader = monai.data.DataLoader(
-        val_ds,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-
-    return train_loader, val_loader
-
 
 def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalities=["t2f", "t1c", "t1n"]):
     config_path = os.path.join(os.getenv("PROJECT_PATH", ""), "data", "current_data_config.yaml")
@@ -839,11 +793,11 @@ def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalit
         ]
     )
 
-    set_deterministic(seed=1234)
+    set_deterministic(seed=42)
 
     json_path = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
     
-    train_files, validation_files = datafold_read(dataset_path=os.getenv("DATASET_PATH"), fold_val=fold_val, fold_train=fold_train,
+    train_files, validation_files = datafold_read(fold_val=fold_val, fold_train=fold_train,
                                                               modalities=modalities, json_path=json_path)
     
     print("length of train files", len(train_files), len(validation_files))

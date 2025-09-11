@@ -1,7 +1,7 @@
 import argparse
 
 from utils import set_deterministic
-from data_utils import preprocess
+from data_utils import preprocess, load_from_expected_json
 
 import os
 from omegaconf import OmegaConf
@@ -17,11 +17,15 @@ if __name__ == '__main__':
     parser.add_argument('--config_folder', type=str, default='sam2_tenfold', help='folder containing configurations for the experiment')
     parser.add_argument('--no_normalize', action='store_true', help='dont use preprocessed data')
     parser.add_argument('--overrides', type=str, help='additional overrides for config folder')
+    parser.add_argument('--expected_folds', type=str, help='load from expected folds')
     args = parser.parse_args()
 
     # first, generate the json
-    os.chdir(join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
-    os.system("python generate_json.py --config_folder " + args.config_folder)
+    if args.expected_folds is not None:
+        load_from_expected_json(args.expected_folds, modalities=['t2f', 't1c', 't1n'], preprocessed=False, ending='nii.gz')
+    else:
+        os.chdir(join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
+        os.system("python generate_json.py --config_folder " + args.config_folder)
 
 
     # load config
@@ -37,9 +41,6 @@ if __name__ == '__main__':
         print("Applying overrides: ", overrides_list)
         config_final = OmegaConf.merge(config_final, OmegaConf.from_dotlist(overrides_list)) 
         print("preprocess resize dims", config_final.preprocessing.resize_dims)
-        
-        
-
 
     # merge details into config_final
     config_final = OmegaConf.merge(config_final, details)
@@ -51,7 +52,7 @@ if __name__ == '__main__':
     if config_final.ft_ckpt != None:
         config_final.ft_ckpt = join(os.getenv('PROJECT_PATH', ""),"MDSA2",config_final.ft_ckpt)
     
-    set_deterministic(config_final.seed)
+    set_deterministic(42)
     
     print("****All Arguments****")
 
@@ -65,7 +66,10 @@ if __name__ == '__main__':
     os.chdir(join(os.getenv("PROJECT_PATH", ""), "MDSA2"))
 
     # run generate json script
-    os.system("python generate_json.py --config_folder " + args.config_folder + " --use_preprocessed")
-
+    if args.expected_folds is None:
+        os.system("python generate_json.py --config_folder " + args.config_folder + " --use_preprocessed")
+    else:
+        load_from_expected_json(args.expected_folds, modalities=['t2f', 't1c', 't1n'], preprocessed=True, ending='npy')
+    
     config_final = OmegaConf.merge(OmegaConf.create({"config_folder": args.config_folder}), config_final)
     OmegaConf.save(config_final, join(os.getenv("DATA_PATH", ""), 'current_data_config.yaml'))

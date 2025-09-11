@@ -29,9 +29,6 @@ class MetricAccumulator():
             self.inference_meter = AverageMeter(name="inference_time")
     
     def update(self, y_pred, y_true, save_pred_path=None, time_spent=None):
-        """
-        Assumes y_pred and y_true are the following format: (B, C, H, W)
-        """
         if hasattr(self, 'inference_meter') and time_spent is not None:
             self.inference_meter.update(time_spent, n=1) # assumes it's already averaged over batch
 

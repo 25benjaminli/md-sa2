@@ -41,14 +41,17 @@ DATA_PATH="/home/.../md-sa2/data"
 ```
 **4. run unit tests**
 
-Go to the unit_tests folder and run unit_tests.py. This is for testing your dataloading setup and also evaluates MD-SA2 on the selected datafold. Feel free to add your own visualization scripts or modify it to run on specific samples. The general MD-SA2 class is also included in `models.py` if you want more control.
+Go to the unit_tests folder and run unit_tests.py. This is for preprocessing the data, testing your dataloading setup and also evaluates MD-SA2 on the selected datafold. Feel free to add your own visualization scripts or modify it to run on specific samples. The general MD-SA2 class is also included in `models.py` if you want more control.
 
 **5. comparisons**
 
-If you want to run baseline U-Net models, visit `eval/eval_unet.py`. The U-net models were trained with different image dimensions (too much memory consumption and time spent with higher dimensions), so ensure that you have run the following prior to running `eval_unet.py`: `python preprocess.py --overrides preprocessing.resize_dims=[224,224]`. 
+Running MD-SA2 on all folds: run `eval/eval_mdsa2.py`. 
+
+If you want to run baseline U-Net models, visit `eval/eval_unet.py`. The U-net models were trained with different image dimensions (too much memory consumption and time spent with higher dimensions), so ensure that you have run the following prior to running `eval_unet.py`: `python preprocess.py --overrides preprocessing.resize_dims=[224,224] --expected_folds expected_folds.json`. 
 
 Running other vanilla segment-anything based models detailed in the paper will be available soon. Also, the option to use a low-rank adapted version of SA2 has been included - not originally part of the paper and sparsely tested. 
 
 Helpful repositories during this study: 
 - https://github.com/facebookresearch/sam2
 - https://github.com/hitachinsk/SAMed
+- https://github.com/Project-MONAI/MONAI

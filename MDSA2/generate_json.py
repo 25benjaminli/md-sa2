@@ -28,7 +28,7 @@ if __name__ == '__main__':
     print("GENERATING JSON WITH CONFIG: ", args.config_folder)
     config = OmegaConf.load(open(join('config', args.config_folder, 'config_train.yaml'), 'r'))
 
-    set_deterministic(config.seed)
+    set_deterministic(42)
     if args.use_preprocessed:
         dataset_path = os.getenv("PREPROCESSED_PATH")
         ending = "npy"

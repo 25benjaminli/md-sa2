@@ -16,8 +16,8 @@ import json
 sys.path.pop(0)
 
 if __name__ == "__main__":
-    fold_eval = [0]
-    fold_train = [1,2,3,4,5,6,7,8,9] # placeholder
+    fold_eval = [0] # adjust to fit your needs
+    fold_train = [a for a in range(10) if a not in fold_eval]
 
     volumes_to_collect = yaml.load(open(join(os.getenv("PROJECT_PATH", ""), "volumes_to_collect.yaml"), 'r'), Loader=yaml.FullLoader)
     config = OmegaConf.create({

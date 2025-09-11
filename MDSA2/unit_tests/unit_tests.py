@@ -45,7 +45,7 @@ class TestData:
     @staticmethod
     def test_preprocess():
         os.chdir("..")
-        os.system("python preprocess.py --config_folder sam2_tenfold")
+        os.system("python preprocess.py --config_folder sam2_tenfold --expected_folds expected_folds.json")
         os.chdir("unit_tests")
         # confirm that the preprocessed folder exists and has number of files equivalent to brats_africa dataset
         assert os.path.exists(join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed")), "Preprocessed folder does not exist."
@@ -86,9 +86,9 @@ class TestData:
     
     @staticmethod
     def test_dataloading():
-        set_deterministic(42)
         model_config = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
         model_config = OmegaConf.load(model_config)
+        set_deterministic(42)
         
         train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1)
         # check if the dataloaders are not empty
@@ -109,6 +109,7 @@ class TestData:
             np.save(f"test_image_{image_title[0]}.npy", images[0].cpu().numpy())
             np.save(f"test_label_{image_title[0]}.npy", labels[0].cpu().numpy())
             break
+
 
         print("Data utilities test passed")
 
