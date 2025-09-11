@@ -91,7 +91,6 @@ class UNetWrapper():
 
     def save_model(self, epoch, save_dir):
         save_path = generate_rndm_path(save_dir)
-        # add "u_net" in front of the last part of the path
         base, fname = os.path.split(save_path)
         fname = f"{self.config.model_name}_{fname}"
         save_path = join(base, fname)
@@ -172,6 +171,7 @@ class UNetWrapper():
                 overlap=self.config.infer_overlap,
             )
 
+        # the assumption is that batch["image"] already contains reference volume if needed
         # if self.config.use_ref_volume:
         #     ref_volume = batch["ref_volume"]
         #     batch["image"] = torch.cat([batch["image"], ref_volume], dim=1)
@@ -181,7 +181,7 @@ class UNetWrapper():
             print("image shape", batch["image"].shape, "label shape", batch["label"].shape)
         
         with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
-            logits = self.model_inferer(batch["image"]) # assumes that you've run validate_epoch already? 
+            logits = self.model_inferer(batch["image"])
 
         t_spent = (time.time()-inf)/self.config.batch_size
         val_labels_list = decollate_batch(batch["label"])
@@ -201,7 +201,6 @@ class MDSA2(nn.Module):
         self.sam2_model = sam2_model
         self.unet_model = unet_model
         self.config = config
-        # self.metric_dict = metric_dict
         self.metric_accumulator_mdsa2 = MetricAccumulator()
         self.metric_accumulator_sa2 = MetricAccumulator()
 
@@ -246,6 +245,7 @@ class MDSA2(nn.Module):
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
                 val_outputs = self.unet_model.run_batch(batch) # logits shape torch.Size([4, 3, 155, 224, 224])
 
+        # if you desire to visualize vols, uncomment and modify
         # for case in range(len(arr_pred))
         #     # save to an np array
         #     self.metric_accumulator_mdsa2.update(y_pred=val_outputs[case].unsqueeze(0), y_true=label[case].unsqueeze(0))

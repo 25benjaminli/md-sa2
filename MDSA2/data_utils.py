@@ -130,8 +130,7 @@ def generate_json_stratify(dataset_path, fold_num, seg_key, modalities):
             fold.append(shuff_hgg.loc[i*num_hgg_each_fold + j].at['BraTS_2020_subject_ID'])
         for j in range(num_lgg_each_fold):
             fold.append(shuff_lgg.loc[i*num_lgg_each_fold + j].at['BraTS_2020_subject_ID'])
-        folds.append(fold) # BraTS20_Training_087
-    # do for the traininng first
+        folds.append(fold) 
     di = {}
     di['training'] = []
 
@@ -142,13 +141,11 @@ def generate_json_stratify(dataset_path, fold_num, seg_key, modalities):
         # fold is a list of 40 strings e.g. [Brats20_Training_001, Brats20_Training_002, ...]
         all_fold_data[fold_idx] = []
         for idx_data, fold_data in enumerate(folds[fold_idx]): # 40
-            # print("fold", fold_data)
             di['training'].append({})
             di['training'][running_di_idx]['fold'] = fold_idx
             di['training'][running_di_idx]['image'] = []
             di['training'][running_di_idx]['label'] = ''
 
-            # get all images
             for j in range(len(modalities)):
                 di['training'][running_di_idx]['image'].append(posixpath.join(dataset_path, fold_data, fold_data + '_' + modalities[j] + '.nii'))
 
@@ -598,14 +595,11 @@ def preprocess(config, use_normalize=True):
     # merge train files and validation files such that both of them get preprocessed
     all_files = train_files + validation_files
 
-    # use a dataloader on these
 
     preprocess_dataset = monai.data.Dataset(data=all_files, transform=preprocess_transforms)
     preprocess_loader = DataLoader(preprocess_dataset, num_workers=config.num_workers, batch_size=config.batch_size_train, shuffle=False)
 
-    # preprocess everything
     preprocess_folder = os.getenv("PREPROCESSED_PATH")
-    # if exists, remove it. create it
     if os.path.exists(preprocess_folder):
         shutil.rmtree(preprocess_folder)
 
@@ -643,7 +637,7 @@ def get_dataloaders(config, use_preprocessed=False, verbose=False, modality_to_r
             # RepeatModality(keys=["image", "label"], modality_to_repeat=modality_to_repeat) if modality_to_repeat != -1 else None, # repeat t2f 3 times
             ConvertToMultiChannel(keys="label", use_softmax=False),
             CastToTyped(keys=["image", "label"], dtype=(torch.float16, torch.uint8)),
-            # # now, randomized stuff
+
             RandFlipd(keys=["image", "label"], prob=config.augmentation.flipH.p, spatial_axis=0) if config.augmentation.flipH is not None else None,
             RandFlipd(keys=["image", "label"], prob=config.augmentation.flipW.p, spatial_axis=1) if config.augmentation.flipW is not None else None,
             RandFlipd(keys=["image", "label"], prob=config.augmentation.flipW.p, spatial_axis=2) if config.augmentation.flipD is not None else None, # !!
@@ -761,7 +755,6 @@ def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalit
         [
             AddNameField(keys=["image", "label"]),
             transforms.LoadImaged(keys=["image", "label"]),
-            # transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
             ConvertToMultiChannel(keys="label"),
 
             transforms.RandZoomd(keys=["image", "label"], prob=0.2, min_zoom=0.9, max_zoom=1.1, mode="nearest-exact"),
@@ -809,7 +802,7 @@ def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalit
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,
-        pin_memory=True, # turn off pin memoyr?
+        pin_memory=True, 
     )
     val_ds = monai.data.Dataset(data=validation_files, transform=val_transform)
     val_loader = monai.data.DataLoader(
