@@ -23,6 +23,7 @@ MDSA2/checkpoints/sam2_hiera_tiny.pt
 MDSA2/experiments
 comparisons/model.pt
 validation/
+MDSA2/unit_tests/test_metrics_*.json
 
 # comparisons/swinunetr*
 # comparisons/plainconvunet*

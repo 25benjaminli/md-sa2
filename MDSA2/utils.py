@@ -401,8 +401,6 @@ def register_net_sam2(model_config):
   elif model_config.vit_name == "large":
     model_cfg = "sam2_hiera_l.yaml"
   
-  # now modify the cfg 
-
   # load the cfg
   import yaml
 
@@ -412,7 +410,6 @@ def register_net_sam2(model_config):
     model_cfg_di = yaml.safe_load(stream)
     # modify the image_size parameter
     model_cfg_di['model']['image_size'] = model_config.img_size
-    print("model cfg image size", model_cfg_di['model']['image_size'])
     model_cfg_di['model']['compile_image_encoder'] = model_config.compile
 
   # write the modified cfg to the same file
@@ -431,12 +428,7 @@ def register_net_sam2(model_config):
   # elif model_config.vit_name == "none":
   #     sam2_checkpoint = None
 
-  # if model_config.no_pretrain:
-  #   sam2_checkpoint = None
-  # sam2_checkpoint = f"../checkpoints/sam2_hiera_{model_config.vit_name}.pt"
-  print("building sam2", model_cfg)
   sam2_model = build_sam2(model_cfg, sam2_checkpoint, device="cuda")
-  print("sam2 model image isze", sam2_model.image_size)
   predictor = SAM2ImagePredictor(sam_model=sam2_model)
 
   # Set training parameters

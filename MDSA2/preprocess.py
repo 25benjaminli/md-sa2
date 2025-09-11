@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--config_folder', type=str, default='sam2_tenfold', help='folder containing configurations for the experiment')
     parser.add_argument('--no_normalize', action='store_true', help='dont use preprocessed data')
-
+    parser.add_argument('--overrides', type=str, help='additional overrides for config folder')
     args = parser.parse_args()
 
     # first, generate the json
@@ -28,6 +28,18 @@ if __name__ == '__main__':
     print("-------------- USING CONFIG: ", args.config_folder)
     config_final = OmegaConf.load(open(join('config', args.config_folder, 'config_train.yaml'), 'r'))
     details = OmegaConf.load(open(join('config', args.config_folder, 'details.yaml'), 'r'))
+    # print("config img size", config_final.img_size)
+
+    # apply overrides
+    if args.overrides is not None:
+        # split the string by space, e.g. key1=value1 key2=value2
+        overrides_list = args.overrides.split(' ')
+        print("Applying overrides: ", overrides_list)
+        config_final = OmegaConf.merge(config_final, OmegaConf.from_dotlist(overrides_list)) 
+        print("preprocess resize dims", config_final.preprocessing.resize_dims)
+        
+        
+
 
     # merge details into config_final
     config_final = OmegaConf.merge(config_final, details)

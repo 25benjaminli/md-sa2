@@ -1,6 +1,3 @@
-# PEP 8 import format
-
-# standard library imports
 import json
 import os
 import random
@@ -10,7 +7,6 @@ import posixpath
 import math
 import pathlib
 
-# ML imports
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -18,7 +14,6 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Sampler, BatchSampler
 
-# data analysis imports
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -44,21 +39,19 @@ from monai.transforms.croppad.dictionary import (
     CenterSpatialCropd, CropForegroundd, RandSpatialCropd
 )
 from utils import get_volume_number, join, set_deterministic
+import yaml
 
 load_dotenv(override=True)
 
 class PrintCallback(transforms.transform.MapTransform):
     def __init__(self, keys, allow_missing_keys=False):
-        # super().__init__(data)
         super().__init__(keys, allow_missing_keys)
         self.keys = keys
 
     def __call__(self, data):
         d = dict(data)
-
         for key in self.keys:
             print("key", key, "shape", d[key].shape, "dtype", d[key].dtype)
-
         return d
 
 def replace_ending(path, endings):
@@ -68,66 +61,47 @@ def replace_ending(path, endings):
     return path
 
 def generate_pseudo_files(di, fold_val):
-    # given di and fold val generate a new folder in data and set the environmen
-    # loop thru all files
-    # base_data_dir = os.path.basename(os.path.normpath(os.getenv('DATASET_PATH')))
-    
     base_data_dir = os.getenv("DATA_PATH")
-    # new_path = join(base_data_dir, 'pseudo_val_volumes')
-
-    # print("new path", new_path)
     print("GENERATING PSEUDO FILES")
     import nibabel as nib
-    endings = ["nii.gz", "nii"] # nii.gz comes first so it's replaced first
+    endings = ["nii.gz", "nii"]
     for idx_patient, patient in tqdm(enumerate(di['training'])):
-        
-        
         seg_path = replace_ending(patient['label'], endings)
 
         if patient['fold'] in fold_val and not os.path.exists(seg_path):
             segmentation = nib.load(patient['label']).get_fdata()
 
             tf_nonzero = np.any(segmentation, axis=(0,1))
-            # convert true false nonzeros for each index to a list of indices
             indices_non_zero = np.where(tf_nonzero)[0]
 
             seg_path = replace_ending(patient['label'], endings)
             seg = segmentation[...,indices_non_zero]
-            np.save(join(seg_path), seg) # save as nii?
+            np.save(join(seg_path), seg)
             di['training'][idx_patient]['label'] = seg_path
             assert os.path.exists(seg_path)
 
             for img_idx, image_path in enumerate(patient['image']):
                 img = nib.load(image_path).get_fdata()
-                # crop the image
                 img_path = replace_ending(image_path, endings)
                 img_new = img[...,indices_non_zero]
 
                 np.save(img_path, img_new)
                 di['training'][idx_patient]['image'][img_idx] = img_path
 
-                assert os.path.exists(img_path) # just have it be in the same location as the old dataset
-
-                # assert the shapes are the same
+                assert os.path.exists(img_path)
                 assert img_new.shape == seg.shape, f"img shape {img_new.shape} seg shape {seg.shape}"
 
         elif os.path.exists(seg_path):
-          # send training
           di['training'][idx_patient]['label'] = seg_path
           assert os.path.exists(seg_path)
 
           for img_idx, image_path in enumerate(patient['image']):
             img_path = replace_ending(image_path, endings)
-            
             di['training'][idx_patient]['image'][img_idx] = img_path
-
-            assert os.path.exists(img_path) # just have it be in the same location as the old dataset
+            assert os.path.exists(img_path)
 
 def generate_json(dataset_path, fold_num, config, seg_key='label', modalities=['flair', 't1ce', 't1', 't2'], ending="nii.gz"):
-    # TODO: remove because we already have one?
-
     if "name_mapping.csv" in os.listdir(dataset_path):
-        # this would only be used if training on a regular BraTS dataset with LGG/HGG data available
         di, sorted_fnames = generate_json_stratify(dataset_path, fold_num, seg_key, modalities)
     else:
         di, sorted_fnames = generate_json_no_stratify(dataset_path, fold_num, seg_key, modalities, ending=ending)
@@ -184,16 +158,12 @@ def generate_json_stratify(dataset_path, fold_num, seg_key, modalities):
             # get label
             di['training'][running_di_idx]['label'] = posixpath.join(dataset_path, fold_data, fold_data + f'_{seg_key}.nii')
 
-            # confirm that these files exist
             for j in range(len(modalities)):
-                # print(di['training'][running_di_idx]['image'][j])
                 assert posixpath.exists(di['training'][running_di_idx]['image'][j])
 
             assert posixpath.exists(di['training'][running_di_idx]['label'])
 
             running_di_idx += 1
-
-            # all_fold_data.append(fold_data)
             all_fold_data[fold_idx].append(fold_data)
 
     # sort each key in fold_data_orig
@@ -203,30 +173,23 @@ def generate_json_stratify(dataset_path, fold_num, seg_key, modalities):
     return di, sorted(all_fold_data)
 
     
-# mostly for brats africa
 def generate_json_no_stratify(dataset_path, fold_num, seg_key='seg', modalities=['t2f', 't1c', 't1n', 't2w'], ending='nii.gz'):
-
     di = {}
-
     di['training'] = []
-    # generate indices corresponding to folds
     indices = list(range(0, len(os.listdir(dataset_path))))
 
     fold_len = len(indices) // fold_num
     current_fold = 0
 
-    # randomize the items in the dataset path
     random_shuffled_dataset = sorted(os.listdir(dataset_path))
     random.shuffle(random_shuffled_dataset)
     print("first few items", random_shuffled_dataset[:5])
 
     fold_data_orig = {0: []}
     for idx_patient, patient in enumerate(random_shuffled_dataset):
-        # send
         if idx_patient % fold_len == 0 and idx_patient != 0:
             current_fold += 1
             fold_data_orig[current_fold] = []
-            # assert current_fold < fold_num
         di['training'].append({})
         
         di['training'][idx_patient]['image'] = []
@@ -234,7 +197,6 @@ def generate_json_no_stratify(dataset_path, fold_num, seg_key='seg', modalities=
         fold_data_orig[current_fold].append(patient)
 
         for modality in modalities:
-            # print(posixpath.join(dataset_path, patient, f"{patient}-{modality}.{ending}"))
             assert posixpath.exists(posixpath.join(dataset_path, patient, f"{patient}-{modality}.{ending}"))
             di['training'][idx_patient]['image'].append(posixpath.join(dataset_path, patient, f"{patient}-{modality}.{ending}"))
 
@@ -262,15 +224,13 @@ def datafold_read(dataset_path, fold_train,fold_val, key="training", cap=60, mod
     val = []
 
     for d in json_data:
-        # print(d, fold_val)
         if "fold" in d and d["fold"] in fold_val:
-            # remove fold key
             d.pop("fold")
             val.append(d)
 
         elif fold_train == "-1":
             d.pop("fold")
-            tr.append(d) # everything else goes to training
+            tr.append(d)
         elif fold_train != "-1" and "fold" in d and d["fold"] in fold_train:
             d.pop("fold")
             tr.append(d)
@@ -285,48 +245,37 @@ def datafold_read(dataset_path, fold_train,fold_val, key="training", cap=60, mod
 
 class ConvertToMultiChannel(transforms.transform.MapTransform):
     def __init__(self, keys, allow_missing_keys=False, use_softmax=False):
-        # super().__init__(data)
         super().__init__(keys, allow_missing_keys)
         self.keys = keys
         self.use_softmax = use_softmax
 
     def __call__(self, data):
-        # call it on label
-        
-        # label is 240x240x155, must be 3x240x240x155
-
         d = dict(data)
         d["label"] = d["label"].squeeze()
         if not self.use_softmax:
             result = [(d["label"] == 1), (d["label"] == 2), (d["label"] == 3)]
-
         else:
             result = [(d["label"] == 0), (d["label"] == 1), (d["label"] == 2), (d["label"] == 3)]
             
         d["label"] = torch.stack(result, dim=0)
-
         return d
     
 class RepeatModality(transforms.transform.MapTransform):
     def __init__(self, keys, modality_to_repeat=0, allow_missing_keys=False):
-        # super().__init__(data)
         super().__init__(keys, allow_missing_keys)
         self.keys = keys
-        self.modality_to_repeat = modality_to_repeat # 0 is t2f
+        self.modality_to_repeat = modality_to_repeat
 
     def __call__(self, data):
         d = dict(data)
-
-        orig_img = d["image"][self.modality_to_repeat] # 384x384x155
+        orig_img = d["image"][self.modality_to_repeat]
         new_img = torch.stack([orig_img] * 3, dim=0)
         d["image"] = new_img
-
         del new_img
         return d
 
 class AddNameField(transforms.transform.MapTransform):
     def __init__(self, keys, send_real_path=False, allow_missing_keys=False):
-        # super().__init__(data)
         super().__init__(keys, allow_missing_keys)
         self.keys = keys
         self.send_real_path = send_real_path
@@ -335,16 +284,12 @@ class AddNameField(transforms.transform.MapTransform):
         d = dict(data)
 
         if not "image_title" in d:
-            # print("------- d image -----------", d["image"])
-            # arbitrary select the first index
-            # name = os.path.splitext(d["image"][0])[0].split("_")[-2] if "_" in d["image"][0] else os.path.splitext(d["image"][0])[0].replace('-seg', '')
             if not self.send_real_path:
                 name = os.path.basename(os.path.dirname(d["image"][0]))
-                # if it's brats normal, then just take the last part
                 if "BraTS20" in name:
-                    name = name.split("_")[-1] # volume num
+                    name = name.split("_")[-1]
                 else:
-                    name = str(int(name.split("-")[-2])).zfill(3) # refill with z because it has 5 digits for some reason originally
+                    name = str(int(name.split("-")[-2])).zfill(3)
                 d["image_title"] = name
             else:
                 d["image_title"] = d["image"]
@@ -354,7 +299,6 @@ class AddNameField(transforms.transform.MapTransform):
 
 class AddNameFieldAggregator(transforms.transform.MapTransform):
     def __init__(self, keys, send_real_path=False, allow_missing_keys=False):
-        # super().__init__(data)
         super().__init__(keys, allow_missing_keys)
         self.keys = keys
         self.send_real_path = send_real_path
@@ -363,15 +307,10 @@ class AddNameFieldAggregator(transforms.transform.MapTransform):
         d = dict(data)
 
         if not "image_title" in d:
-            # print("------- d image -----------", d["image"])
-            # arbitrary select the first index
-            # name = os.path.splitext(d["image"][0])[0].split("_")[-2] if "_" in d["image"][0] else os.path.splitext(d["image"][0])[0].replace('-seg', '')
             if not self.send_real_path:
                 p = d["image"]
                 basename = os.path.basename(p)
                 name, ext = os.path.splitext(basename)
-                # print("NAME", name)
-                # if it's brats normal, then just take the last part
                 d["image_title"] = name.split("_")[1]
             else:
                 d["image_title"] = d["image"]
@@ -380,37 +319,26 @@ class AddNameFieldAggregator(transforms.transform.MapTransform):
         return d
 class RandomizeSlices(transforms.transform.MapTransform):
     def __init__(self, keys, oversample=0, allow_missing_keys=False):
-        # super().__init__(data)
         super().__init__(keys, allow_missing_keys)
         self.keys = keys
         self.oversample = oversample
 
     def __call__(self, data):
-        # call it on label
-        
-        # label is 240x240x155, must be 3x240x240x155
-
         d = dict(data)
 
         current_indices = list(range(data["image"].shape[-1]))
-
-        # pick random indices, generate array of integers of from 0, data["image"].shape[-1]-1 to represent indices without replacement
-
         indices = np.random.choice(current_indices, len(current_indices), replace=False)
-        # get indices of slices that are not zero
-        indices_non_zero = torch.nonzero(torch.sum(data["label"], dim=(0, 1, 2))).squeeze(1).tolist() # squeeze tolist?
-
+        indices_non_zero = torch.nonzero(torch.sum(data["label"], dim=(0, 1, 2))).squeeze(1).tolist()
 
         randomized_image = torch.zeros_like(data["image"])
         randomized_mask = torch.zeros_like(data["label"])
         for slice_idx in range(data["image"].shape[-1]):
-            # if the slice is zero, then we can oversample it
             if self.oversample > 0 and len(torch.nonzero(data["image"][..., slice_idx])) == 0 and np.random.rand() < self.oversample:
                 rand_val = np.random.randint(0, len(indices_non_zero))
                 randomized_image[..., slice_idx] = data["image"][..., indices_non_zero[rand_val]]
                 randomized_mask[..., slice_idx] = data["label"][..., indices_non_zero[rand_val]]
             else:
-                randomized_image[..., slice_idx] = data["image"][..., indices[slice_idx]] # copy slice by slice - is it too slow
+                randomized_image[..., slice_idx] = data["image"][..., indices[slice_idx]]
                 randomized_mask[..., slice_idx] = data["label"][..., indices[slice_idx]]
         
         d["image"] = randomized_image
@@ -418,53 +346,36 @@ class RandomizeSlices(transforms.transform.MapTransform):
 
         return d
 
-# credit for batching method: https://medium.com/@haleema.ramzan/how-to-build-a-custom-batch-sampler-in-pytorch-ce04161583ee
 class CurriculumSampler(BatchSampler):
-    """
-    reverse: If you want descending order
-
-    Note: randomized slices cannot be used with this
-    """
     def __init__(self, dataset, reverse=True, batch_size=2, epochs=50, grow_epochs=5, start_rate=0.1):
         self.dataset = dataset
-        # self.num_slices = num_slices
-        # self.difficulty = difficulty
         self.reverse = reverse
         self.batch_size = batch_size
 
         self.curriculum = {
             "ema_metric": 0,
             "max_patience": 3,
-            "div": 5, # divide into five sections
+            "div": 5,
             "step_init": 0,
-            # "alpha": 0.2, # influence of the current step, kind of arbitrary right now. similar to nnunet
-            "alpha": 0.5, # influence of the current step, kind of arbitrary right now. similar to nnunet
-
+            "alpha": 0.5,
             "current_patience": 0,
             "thresh_improve": 0.001,
             "weights": {
-                "metrics": 0, # greater metric is easier
-                "num_pixels": 0, # the more pixels, the easier 
-                "distance_vars": 0, # less distance variance is easier
-                "losses": 1, # if true, then the more distance variance, the easier
-            
-            }, # set one weight to zero to just not use it at all.
+                "metrics": 0,
+                "num_pixels": 0,
+                "distance_vars": 0,
+                "losses": 1,
+            },
             "minus": {
-                "metrics": True, # if true, then the greater the metric, the easier
-                "num_pixels": True, # if true, then the more pixels, the easier
-                "distance_vars": False, # if true, then the more distance variance, the easier
-                "losses": False, # if true, then the more distance variance, the easier
-
+                "metrics": True,
+                "num_pixels": True,
+                "distance_vars": False,
+                "losses": False,
             },
             "average_metrics": [],
             "ema_metrics": [],
         }
 
-        # self.weights = [0.33, 0.33, 0.33]
-        # self.div = 10
-        # self.ema_metric = 0 # ! REFINE to go off a moving average? (today*alpha) + previous*(1-alpha)
-        # self.patience = 2 # 2 epochs to wait
-        # self.ema_details
         self.current_epoch = 0
         self.grow_epochs = grow_epochs
         self.start_rate = start_rate
@@ -529,43 +440,28 @@ class CurriculumSampler(BatchSampler):
 
         
     def __len__(self):
-        return math.ceil(len(self.dataset) / self.batch_size) if not self.dataset.use_heuristic else math.ceil(len(self.sorted_indices) / self.batch_size) # ! TODO: fix this not yielding correct size
-        # number of batches is the number of samples divided by the batch size but rounded up
+        return math.ceil(len(self.dataset) / self.batch_size) if not self.dataset.use_heuristic else math.ceil(len(self.sorted_indices) / self.batch_size)
 
 class OverSampler(Sampler):
-    """
-    reverse: If you want descending order
-    """
     def __init__(self, dataset):
         self.dataset = dataset
 
     def __iter__(self):
-        # Sort indices by loss in descending order
-        # sort difficulty by number of pixels
-
-        # sorted_indices = sorted(difficulty, key=lambda x: x[1], reverse=self.reverse)
-        # return iter(sorted_indices)
-
-        # oversample
         pct_masks = 0.5
         tumor_indices = [idx for idx in range(len(self.dataset)) if torch.sum(self.dataset[idx]['label'] > 0).item() > 0]
         non_tumor_indices = [idx for idx in range(len(self.dataset)) if torch.sum(self.dataset[idx]['label'] > 0).item() == 0]
 
-        # sample with replaceement
         selected_tumor_indices = np.random.choice(tumor_indices, int(pct_masks * len(tumor_indices)), replace=True)
         selected_non_tumor_indices = np.random.choice(non_tumor_indices, int((1-pct_masks) * len(non_tumor_indices)), replace=True)
         idx_finals = np.hstack([selected_tumor_indices, selected_non_tumor_indices])
         
-        idx_finals = idx_finals[:len(self.dataset)] # cap it at the length of the dataset to avoid any rounding errors
+        idx_finals = idx_finals[:len(self.dataset)]
         return iter(idx_finals)
 
     def __len__(self):
         return len(self.dataset)
     
 class LossSampler(Sampler):
-    """
-    reverse: If you want descending order
-    """
     def __init__(self, dataset, reverse=True, batch_size=4):
         self.dataset = dataset
         self.reverse = reverse
@@ -573,8 +469,6 @@ class LossSampler(Sampler):
 
     def __iter__(self):
         sorted_indices = sorted(range(len(self)), key=lambda idx: self.dataset.losses[idx], reverse=self.reverse)
-        # print("sorted indices", sorted_indices)
-        # print("orig indices", self.dataset.losses)
 
         batch = []
         for idx in sorted_indices:
@@ -585,7 +479,7 @@ class LossSampler(Sampler):
         
 
     def __len__(self):
-        return math.ceil(len(self.dataset) / self.batch_size) # number of batches is the number of samples divided by the batch size but rounded up
+        return math.ceil(len(self.dataset) / self.batch_size)
     
 
 class BrainDataset(Dataset):
@@ -607,37 +501,28 @@ class BrainDataset(Dataset):
     #     return math.ceil(len(self.data) / self.batch_size)
 
     def calculate_variance(self, label):
-        # label is 3x224x224xslices
-        # calculate the variance of the label
         aggregated_variance = 0
         assert len(label.shape) == 4, "label must be 3ximgximgxslices"
         for i in range(label.shape[0]):
-            # label[i] is 224x224xslices, so torch nonzero yields 2D dims
             indices = torch.nonzero(label[i] > 0).to(torch.float16)
 
             for axis in range(indices.shape[1]):
                 var = torch.var(indices[:, axis], unbiased=False)
-                aggregated_variance += var if not torch.isnan(var) else 0 # if there are no positive pixels, then the variance is zero
+                aggregated_variance += var if not torch.isnan(var) else 0
         
-        return aggregated_variance.cpu().numpy() # maybe also calculate it on the binarized version
+        return aggregated_variance.cpu().numpy()
     
     def calculate_numpixels(self, label_binary):
-        # label must already be thresholded, 3ximgximgxnumslices
-
-        label_binary = torch.sum(label_binary, dim=0) > 0 # 224x224, overlappnig pixels considered as one
-        # calculate the number of positive pixels
+        label_binary = torch.sum(label_binary, dim=0) > 0
         return torch.sum(label_binary).item()
 
 
     def update_info(self, pred, gt, metric, losses, vol_name):
-        # each label corresponds to a ground truth array. assumes label is sigmoided and thresholded already
-
         for batch_idx in range(gt.shape[0]):
-            # 3ximgximgxslices
             label_var = self.calculate_variance(label=gt[batch_idx])
             num_pixels = self.calculate_numpixels(label_binary=gt[batch_idx])
             
-            self.info['metrics'][vol_name[batch_idx]] = sum(metric[batch_idx])/3 # np array
+            self.info['metrics'][vol_name[batch_idx]] = sum(metric[batch_idx])/3
             self.info['distance_vars'][vol_name[batch_idx]] = label_var
             self.info['num_pixels'][vol_name[batch_idx]] = num_pixels
             self.info['losses'][vol_name[batch_idx]] = losses[batch_idx]
@@ -656,7 +541,7 @@ class RandomSampler(BatchSampler):
         if self.limit < 1:
             random.shuffle(indices)
             indices = indices[:int(self.limit * len(indices))] # limit the number of samples
-        print("length indices", len(indices))
+            print("length indices", len(indices))
         batch = []
         for idx in indices:
             batch.append(idx)
@@ -708,29 +593,21 @@ def preprocess(config, use_normalize=True):
     os.makedirs(preprocess_folder, exist_ok=False)
     curr_idx = 0
     for data in tqdm(preprocess_loader):
-        # send to appropriate place based on the name
-        loc = data["image_title"] # (3, 4) where 3 is modalities, 4 is batch size. I need to transpose it
-        loc = np.array(loc).transpose(1, 0) # (4, 3)
+        loc = data["image_title"]
+        loc = np.array(loc).transpose(1, 0)
         if curr_idx == len(preprocess_loader)-1:
             fig, axs = plt.subplots(4, 3)
             print("image shape", data["image"].shape)
 
         for batch_idx in range(len(loc)):
-            # create a folder for each batch idx
-            current_loc = loc[batch_idx] # (3,)
-            # for each image, save it to the folder
+            current_loc = loc[batch_idx]
             for modality_idx, modality_path in enumerate(current_loc):
-
                 new_path = modality_path.replace(os.getenv("DATASET_PATH"), preprocess_folder)
-                # create the folder if it doesn't exist
                 os.makedirs(os.path.dirname(new_path), exist_ok=True)
 
                 new_path = new_path.replace(".nii.gz", ".npy")
-
-                # save the image
                 np.save(new_path, data["image"][batch_idx][modality_idx])
 
-            # save the label under label title
             new_label_path = data["label_title"][batch_idx].replace(os.getenv("DATASET_PATH"), preprocess_folder)
             os.makedirs(os.path.dirname(new_label_path), exist_ok=True)
 
@@ -739,7 +616,7 @@ def preprocess(config, use_normalize=True):
 
         curr_idx += 1
 
-def get_dataloaders(config, use_preprocessed=False, modality_to_repeat=-1):
+def get_dataloaders(config, use_preprocessed=False, verbose=False, modality_to_repeat=-1):
     train_transforms = transforms.compose.Compose(
         [
             AddNameField(keys=["image"]),
@@ -772,20 +649,18 @@ def get_dataloaders(config, use_preprocessed=False, modality_to_repeat=-1):
     
     json_path = join(os.getenv("PROJECT_PATH"), "MDSA2", "train.json")
     dataset_path = os.getenv("DATASET_PATH") if not use_preprocessed else os.getenv("PREPROCESSED_PATH")
-    print("modalities", config.modalities)
     train_files, validation_files = datafold_read(dataset_path=dataset_path, fold_val=config.fold_val, fold_train=config.fold_train,
                                                               modalities=config.modalities, json_path=json_path)
-
-
-    print("length of train, validation files", len(train_files), len(validation_files))
-    print("first train", train_files[0])
-    # send to a yaml file
+    
+    if verbose:
+        print("modalities", config.modalities)
+        print("length of train, validation files", len(train_files), len(validation_files))
+        print("first train", train_files[0])
+    
     file_paths = {
         "train": train_files,
         "val": validation_files,
     }
-
-    print("num workers", config.num_workers)
 
     train_dataset = monai.data.Dataset(data=train_files, transform=train_transforms)
     train_loader = DataLoader(train_dataset, num_workers=0, batch_size=config.batch_size_train, shuffle=True, pin_memory=False)
@@ -827,15 +702,14 @@ def generate_folds_aggregator(direc, fold_train, fold_val, modalities, use_ref_v
 
     for f in os.listdir(direc):
       if not 'brain_volume' in f:
-        continue # just skip since we don't want duplicates
+        continue
 
-      num = os.path.splitext(f)[0].split("_")[-1] # this is fine...
+      num = os.path.splitext(f)[0].split("_")[-1]
       if num in vols_train:
         train_paths.append(create_file_paths(num, use_ref_volume))
       elif num in vols_val:
         valid_paths.append(create_file_paths(num, use_ref_volume))
       else:
-        # throw exception
         raise Exception(f"Didn't find the current file {f} in train or val")
 
     print("final lengths of train and valid paths", len(train_paths), len(valid_paths))
@@ -851,9 +725,8 @@ class Transpose_Transform(transforms.transform.MapTransform):
         d = dict(data)
 
         for key in self.keys:
-            # originally (3, 141, 240, 240). consider using low res images though
             print(d[key].shape)
-            d[key] = torch.permute(d[key], (0, 2,3,1)) # keep everything the same but add metadata
+            d[key] = torch.permute(d[key], (0, 2,3,1))
 
         return d
 
@@ -867,8 +740,6 @@ def get_aggregator_loader(batch_size, roi=(128,128,128), direc='./output_volumes
     train_files, validation_files = generate_folds_aggregator(
         direc, fold_train, fold_val, modalities, use_ref_volume)
     
-    # print("first few train files", train_files[:3])
-    # print("first few validation files", validation_files[:3])
     image_label_arr = ["image", "label"] if not use_ref_volume else ["image", "label", "ref_volume"]
     
 
@@ -925,17 +796,19 @@ def get_aggregator_loader(batch_size, roi=(128,128,128), direc='./output_volumes
 
 
 def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalities=["t2f", "t1c", "t1n"]):
-    # datalist_json = json_list
+    config_path = os.path.join(os.getenv("PROJECT_PATH", ""), "data", "current_data_config.yaml")
 
-    # TODO: fix this to work with preprocessed data
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    assert config["preprocessing"]["resize_dims"] == [224, 224], f"Preprocessed image size must be 224x224, got {config['preprocessing']['resize_dims']}"
+
     train_transform = transforms.Compose(
         [
             AddNameField(keys=["image", "label"]),
             transforms.LoadImaged(keys=["image", "label"]),
             # transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
             ConvertToMultiChannel(keys="label"),
-            transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=[224,224,-1]),
-            transforms.Resized(keys=["image", "label"], spatial_size=(384,384,-1), mode=("bilinear", "nearest-exact")),
 
             transforms.RandZoomd(keys=["image", "label"], prob=0.2, min_zoom=0.9, max_zoom=1.1, mode="nearest-exact"),
 
@@ -953,7 +826,6 @@ def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalit
             transforms.RandFlipd(keys=["image", "label"], prob=0.3, spatial_axis=1),
             transforms.RandFlipd(keys=["image", "label"], prob=0.3, spatial_axis=2),
 
-            # ! APPLY ZOOM
             transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
             transforms.RandScaleIntensityd(keys="image", factors=0.5, prob=0.3, channel_wise=True),
             transforms.RandShiftIntensityd(keys="image", offsets=0.5, prob=0.3, channel_wise=True),
@@ -964,21 +836,17 @@ def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalit
             AddNameField(keys=["image", "label"]),
             transforms.LoadImaged(keys=["image", "label"]),
             ConvertToMultiChannel(keys="label"),
-            transforms.Resized(keys=["image", "label"], spatial_size=(224,224,-1), mode=("bilinear", "nearest-exact")),
         ]
     )
 
     set_deterministic(seed=1234)
 
     json_path = os.path.join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
-    # print("MODALITIES", modalities)
     
     train_files, validation_files = datafold_read(dataset_path=os.getenv("DATASET_PATH"), fold_val=fold_val, fold_train=fold_train,
                                                               modalities=modalities, json_path=json_path)
     
     print("length of train files", len(train_files), len(validation_files))
-    # print("first valid files", validation_files[:3])   
-    # train with 4 mods and see what happens
 
     train_ds = monai.data.Dataset(data=train_files, transform=train_transform)
 

@@ -42,7 +42,7 @@ class UNetWrapper():
     """
     def __init__(self, train_loader, val_loader,
                   loss_func, use_scaler, optimizer,
-                 config, **model_params):
+                 config, verbose, **model_params):
         
         if config.model_type == "UNet":
             self.model = UNet(**model_params).to("cuda")
@@ -74,6 +74,7 @@ class UNetWrapper():
         self.post_sigmoid = Activations(sigmoid=True)
         self.post_pred = AsDiscrete(argmax=False, threshold=0.5)
         self.device = torch.device("cuda:0")
+        self.verbose = verbose
 
 
     def load_weights(self, weights_path):
@@ -107,7 +108,7 @@ class UNetWrapper():
                 data = torch.cat([data, ref_volume], dim=1) # concatenate the label and modalities
                 del ref_volume
 
-            if idx == 0:
+            if idx == 0 and self.verbose:
                 print(f'{batch_data["image_title"]}, target shape', data.shape, target.shape, data.mean(), data.std())
 
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
@@ -121,7 +122,7 @@ class UNetWrapper():
 
                 run_loss.update(loss.item(), n=self.config.batch_size)
 
-            del data, target, logits, loss
+            # del data, target, logits, loss
 
         return run_loss.avg
     
@@ -136,31 +137,17 @@ class UNetWrapper():
             overlap=self.config.infer_overlap,
         )
 
-
-        inference_durations = []
-
         with torch.no_grad():
             for idx, batch_data in tqdm(enumerate(self.val_loader)):
-                data, target = batch_data["image"].to(self.device), batch_data["label"].to(self.device)
+                batch_data["image"] = batch_data["image"].to(self.device)
+                batch_data["label"] = batch_data["label"].to(self.device)
                 if self.config.use_ref_volume:
                     ref_volume = batch_data["ref_volume"].to(self.device)
-                    data = torch.cat([data, ref_volume], dim=1)
-
-                if idx == 0:
-                    print("data shape", data.shape)
-
-                inf = time.time()
-                with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
-                    logits = self.model_inferer(data)
-
-                t_spent = (time.time()-inf)/self.config.batch_size
-
-                inference_durations.append(t_spent)
-                val_labels_list = decollate_batch(target)
-                val_outputs_list = decollate_batch(logits)
-                post_output = [self.post_pred(self.post_sigmoid(val_pred_tensor)) for val_pred_tensor in val_outputs_list]
-                self.metric_accumulator.update(y_pred=post_output, y_true=val_labels_list, time_spent=t_spent)
-
+                    data = torch.cat([data, ref_volume], dim=1) # concatenate the label and modalities
+                    del ref_volume
+                
+                post_output = self.run_batch(batch_data) # run batch already cuda-izes it
+                
                 if self.config.fold_val[0] in self.config.volumes_to_collect.keys():
                     if batch_data["image_title"][0] in self.config.volumes_to_collect[self.config.fold_val[0]]:
                         # print("saving volume", batch_data["image_title"][0], val_output_convert[0].shape)
@@ -168,13 +155,13 @@ class UNetWrapper():
                         os.makedirs(predictions_base, exist_ok=True)
                         np.save(join(predictions_base, f"{batch_data['image_title'][0]}_fold_{self.config.fold_val[0]}.npy"), post_output[0])
 
-                del data, target, logits, val_labels_list, val_outputs_list, post_output
+                # del batch_data["image"], batch_data["label"], logits, val_labels_list, val_outputs_list, post_output
 
         return self.metric_accumulator.get_metrics()
     
     @torch.no_grad()
-    def run_batch(self, batch):
-        if not self.model_inferer:
+    def run_batch(self, batch): # assumes it's already cuda-ized
+        if not hasattr(self, 'model_inferer'):
             self.model_inferer = partial(
                 sliding_window_inference,
                 roi_size=[self.config.roi[0], self.config.roi[1], self.config.roi[2]],
@@ -183,17 +170,19 @@ class UNetWrapper():
                 overlap=self.config.infer_overlap,
             )
 
-        data, target = batch["image"].to(self.device), batch["label"].to(self.device)
-        if self.config.use_ref_volume:
-            ref_volume = batch["ref_volume"].to(self.device)
-            data = torch.cat([data, ref_volume], dim=1)
+        # if self.config.use_ref_volume:
+        #     ref_volume = batch["ref_volume"]
+        #     batch["image"] = torch.cat([batch["image"], ref_volume], dim=1)
 
         inf = time.time()
+        if self.verbose:
+            print("image shape", batch["image"].shape, "label shape", batch["label"].shape)
+        
         with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
-            logits = self.model_inferer(data) # assumes that you've run validate_epoch already? 
+            logits = self.model_inferer(batch["image"]) # assumes that you've run validate_epoch already? 
 
         t_spent = (time.time()-inf)/self.config.batch_size
-        val_labels_list = decollate_batch(target)
+        val_labels_list = decollate_batch(batch["label"])
         val_outputs_list = decollate_batch(logits)
         post_output = [self.post_pred(self.post_sigmoid(val_pred_tensor)) for val_pred_tensor in val_outputs_list]
         self.metric_accumulator.update(y_pred=post_output, y_true=val_labels_list, time_spent=t_spent)
@@ -214,7 +203,7 @@ class MDSA2(nn.Module):
 
 
     def forward(self, batch, save_path=None):
-        image, label, volume_name = batch["image"], batch["label"], batch["image_title"]
+        image, label, volume_name = batch["image"].cuda(), batch["label"].cuda(), batch["image_title"]
         arr_pred = torch.zeros(image.shape).cuda()
         arr_low_res = torch.zeros(size=(image.shape[0], image.shape[1], image.shape[2] // 4, image.shape[3] //4, image.shape[4])).cuda()
         
@@ -245,26 +234,29 @@ class MDSA2(nn.Module):
         image = torch.permute(image, (0,1,4,2,3))
         label = torch.permute(label, (0,1,4,2,3))
         data = torch.cat([torch.permute(arr_pred, (0,1,4,2,3)), image], dim=1) # ensure that the images are aligned properly. maybe need to permute image
-        
+        batch = {
+            "image": data,
+            "label": label
+        }
         with torch.inference_mode():
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
-                val_outputs = self.unet_model.run(data) # logits shape torch.Size([4, 3, 155, 224, 224])
+                val_outputs = self.unet_model.run_batch(batch) # logits shape torch.Size([4, 3, 155, 224, 224])
 
-        for case in range(len(arr_pred)):
-            # save to an np array
-            self.metric_accumulator_mdsa2.update(y_pred=val_outputs[case].unsqueeze(0), y_true=label[case].unsqueeze(0))
-            
-            if save_path is not None:
-                save_path = join(save_path)
-                os.makedirs(save_path, exist_ok=True)
-                curr_dice = self.metric_accumulator.meters["dice"].cache[-1] # get the most recent dice value
+        # for case in range(len(arr_pred))
+        #     # save to an np array
+        #     self.metric_accumulator_mdsa2.update(y_pred=val_outputs[case].unsqueeze(0), y_true=label[case].unsqueeze(0))
+
+        #     if save_path is not None:
+        #         save_path = join(save_path)
+        #         os.makedirs(save_path, exist_ok=True)
+        #         curr_dice = self.metric_accumulator.meters["dice"].cache[-1] # get the most recent dice value
                 
-                fname = f"{volume_name[case]}_fold_{self.config.fold_val[0]}_{curr_dice}.npy"
-                arr_np = val_outputs[case].unsqueeze(0).detach().cpu().numpy()
+        #         fname = f"{volume_name[case]}_fold_{self.config.fold_val[0]}_{curr_dice}.npy"
+        #         arr_np = val_outputs[case].unsqueeze(0).detach().cpu().numpy()
                 
-                np.save(join(save_path, fname), arr_np)
+        #         np.save(join(save_path, fname), arr_np):
         
-        return self.metric_accumulator_sa2.get_metrics(), self.metric_accumulator_mdsa2.get_metrics() if self.unet_model else {}
+        return self.metric_accumulator_sa2.get_metrics(), self.unet_model.metric_accumulator.get_metrics() if self.unet_model else {}
     
 class LoRA_SAM2(nn.Module):
     def __init__(self, predictor, r: int, lora_layer=None):
@@ -497,7 +489,7 @@ def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.da
 
     path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_eval}")
 
-    model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train", "runs", path_thing, "best_model.pth")
+    model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", path_thing, "best_model_sam2.pth")
     model_config.batch_size_train=1 # manually set to 1 for comparison
     model_config.batch_size_val=1 # manually set to 1 for comparison
     model_config.snapshot_path = generate_rndm_path(join("eval", "runs", "aggregator"))
@@ -508,42 +500,49 @@ def initialize_mdsa2(model_config, use_unet=True) -> Tuple[MDSA2, torch.utils.da
     sam2 = register_net_sam2(model_config)
 
     # yeah... this is pretty ugly
-    volumes_to_collect = yaml.load(open(join(os.getenv("PROJECT_PATH", ""), "volumes_to_collect.yaml"), 'r'), Loader=yaml.FullLoader)
-    config = OmegaConf.create({
-        "model_type": "DynUNet",
-        "use_ref_volume": True,
-        "batch_size": 1,
-        "max_epochs": 100,
-        "roi": [128, 128, 128],
-        "sw_batch_size": 1,
-        "infer_overlap": 0.5,
-        "fold_val": model_config.fold_val,
-        "volumes_to_collect": volumes_to_collect,
-        "model_name": "aggregator"
-    })
-    
-    strides = [[1, 1, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
-    filters = [16, 24, 32, 48, 64, 96, 128]
-    
-    model_params = {
-        "kernels": [[3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]],
-        "strides": strides,
-        "filters": filters,
-        "upsample_kernel_size": strides[1:],
-        "spatial_dims": 3,
-        "in_channels": 6,
-        "out_channels": 3,
-        "norm_name": ("INSTANCE", {"affine": True}),
-        "act_name": ("leakyrelu", {"inplace": False, "negative_slope": 0.01}),
-        "deep_supervision": False,
-        # "deep_supr_num": self.args.deep_supr_num,
-        "res_block": False,
-        "trans_bias": True,
-    }
+    if use_unet:
+        volumes_to_collect = yaml.load(open(join(os.getenv("PROJECT_PATH", ""), "volumes_to_collect.yaml"), 'r'), Loader=yaml.FullLoader)
+        config = OmegaConf.create({
+            "model_type": "DynUNet",
+            "use_ref_volume": True,
+            "batch_size": 1,
+            "max_epochs": 100,
+            "roi": [128, 128, 128],
+            "sw_batch_size": 1,
+            "infer_overlap": 0.5,
+            "fold_val": model_config.fold_val,
+            "volumes_to_collect": volumes_to_collect,
+            "model_name": "aggregator"
+        })
+        
+        strides = [[1, 1, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
+        filters = [16, 24, 32, 48, 64, 96, 128]
+        
+        model_params = {
+            "kernel_size": [[3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]],
+            "strides": strides,
+            "filters": filters,
+            "upsample_kernel_size": strides[1:],
+            "spatial_dims": 3,
+            "in_channels": 6,
+            "out_channels": 3,
+            "norm_name": ("INSTANCE", {"affine": True}),
+            "act_name": ("leakyrelu", {"inplace": False, "negative_slope": 0.01}),
+            "deep_supervision": False,
+            # "deep_supr_num": self.args.deep_supr_num,
+            "res_block": False,
+            "trans_bias": True,
+        }
 
-    aggregator_unet = UNetWrapper(train_loader=None, val_loader=val_loader, loss_func=None, 
-    scaler=None, optimizer=None, config=config, **model_params)
+        aggregator_unet = UNetWrapper(train_loader=None, val_loader=val_loader, loss_func=None, 
+        use_scaler=False, optimizer=None, config=config, verbose=False, **model_params)
 
+        # load aggregator unet weights
+        aggregator_unet.load_weights(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_eval}", "best_model.pth"))
+
+    else:
+        aggregator_unet = None
+        
     model = MDSA2(sam2, unet_model=aggregator_unet, config=model_config)
     model.eval()
 

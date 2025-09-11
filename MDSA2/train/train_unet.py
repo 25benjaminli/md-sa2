@@ -1,6 +1,10 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pathlib import Path
+
+# Add parent directory
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
 
 from models import UNetWrapper
 from omegaconf import OmegaConf
@@ -9,6 +13,8 @@ from utils import join, generate_rndm_path
 from data_utils import get_unet_loader
 import json
 import time
+
+sys.path.pop(0)
 
 if __name__ == "__main__":
     fold_eval = 0

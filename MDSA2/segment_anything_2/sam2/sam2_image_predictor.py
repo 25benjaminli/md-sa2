@@ -13,7 +13,6 @@ import torch
 from PIL.Image import Image
 
 from sam2.modeling.sam2_base import SAM2Base
-
 from sam2.utils.transforms import SAM2Transforms
 
 

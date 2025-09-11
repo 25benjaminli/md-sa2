@@ -21,7 +21,7 @@ dill
 monai
 elasticdeform
 vedo
-opencv-python
+opencv-python-headless
 pandas
 matplotlib
 tensorboard

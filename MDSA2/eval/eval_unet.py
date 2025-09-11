@@ -1,6 +1,10 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pathlib import Path
+
+# Add parent directory
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
 
 from models import UNetWrapper
 from omegaconf import OmegaConf
@@ -8,6 +12,8 @@ import yaml
 from utils import join
 from data_utils import get_unet_loader
 import json
+
+sys.path.pop(0)
 
 if __name__ == "__main__":
     fold_eval = [0]
@@ -53,13 +59,12 @@ if __name__ == "__main__":
     
     
     unet_model = UNetWrapper(train_loader=train_loader, val_loader=val_loader, loss_func="Dice", 
-    use_scaler=True, optimizer="AdamW", config=config, **model_params)
+    use_scaler=True, optimizer="AdamW", config=config, verbose=False, **model_params)
 
     unet_model.load_weights(weights_path="../checkpoints/dynunet_100/DynUNet_fold_0.pt")
     
     json_metrics = unet_model.validate_epoch()
-
-    with open(f"best_metrics_{config.model_type}_{fold_eval}.json", "w") as f:
+    metric_path = f"best_metrics_{config.model_type}_{fold_eval}.json"
+    print("sending metrics to ", metric_path)
+    with open(metric_path, "w") as f:
         json.dump(json_metrics, f, indent=4)
-
-    # TODO: do the 224x224 evaluation instead of 384x384. 

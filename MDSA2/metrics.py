@@ -113,15 +113,6 @@ def calculate_binary_dice(y_pred, y):
     binarized_pred = torch.from_numpy(binarize(y_pred)).unsqueeze(0)
     binarized_label = torch.from_numpy(binarize(y)).unsqueeze(0)
 
-    # print("binarized prediction shape", binarized_pred.shape, "binarized label shape", binarized_label.shape)
-
-    # assert that the binarized image has only 1 channel and 1s and 0s only via uniques
-    # assert len(torch.unique(binarized_pred)) <= 2 and binarized_pred.shape[0] == 1, f"got {torch.unique(binarized_pred)} and shape {binarized_pred.shape}"
-    # assert len(torch.unique(binarized_label)) == 2 and binarized_label.shape[0] == 1, f"got {torch.unique(binarized_label)} and shape {binarized_label.shape}"
-    # print("binarized prediction shape", binarized_pred.shape, "binarized label shape", binarized_label.shape)
-
-    # calculate binary dice
-
     # print("binarized pred, binarized label", binarized_pred.shape, binarized_label.shape)
     dsc_fn = DiceMetric(include_background=True, get_not_nans=True, ignore_empty=True)
     dsc_fn(y_pred=binarized_pred, y=binarized_label)

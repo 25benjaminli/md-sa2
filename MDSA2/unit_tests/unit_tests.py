@@ -21,22 +21,32 @@ import torch
 # use sys path append to import from parent directory
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pathlib import Path
+
+# Add parent directory
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
 
 import numpy as np
 import os
 from data_utils import get_dataloaders
 from omegaconf import OmegaConf
-from utils import AverageMeter, set_deterministic, join
+from utils import set_deterministic, join
 from models import initialize_mdsa2
-from matplotlib.widgets import Slider
+
+sys.path.pop(0)
+
+# Set matplotlib to use non-interactive backend to avoid Qt issues
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+import json
 
 class TestData:
     @staticmethod
     def test_preprocess():
         os.chdir("..")
         os.system("python preprocess.py --config_folder sam2_tenfold")
+        os.chdir("unit_tests")
         # confirm that the preprocessed folder exists and has number of files equivalent to brats_africa dataset
         assert os.path.exists(join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed")), "Preprocessed folder does not exist."
         preprocessed_folder_names = os.listdir(join(os.getenv("PROJECT_PATH", ""), "data", "preprocessed"))
@@ -52,6 +62,26 @@ class TestData:
             assert len(files) == 4, f"Folder {folder_name} does not contain 4 files (3 modality, one seg)."
             modalities = [f.split('-')[-1].split('.')[0] for f in files]
             assert sorted(modalities) == sorted(['seg', 't1c', 't1n', 't2f']), f"Folder {folder_name} does not contain correct modality files."
+        
+        # this is a pretty janky way to check that they match, but it works
+        # read train.json and confirm that all fold 0s correspond to expected_folds.json
+        with open(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json"), 'r') as f:
+            train_data = json.load(f)
+        
+        with open(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "unit_tests", "expected_folds.json"), 'r') as f:
+            expected_folds = json.load(f)
+            expected_folds = {int(k): v for k, v in expected_folds.items()}
+
+        end_dict = [[] for _ in range(10)]
+        for item in train_data["training"]:
+            # get directory name of the item["image"][0]
+            end_dict[item["fold"]].append(os.path.basename(os.path.dirname(item["image"][0])))
+
+        end_dict = [sorted(fold) for fold in end_dict]
+
+        for i, fold in enumerate(end_dict):
+            assert fold == expected_folds[i], f"Fold {i} does not match expected folds, found {fold}, expected {expected_folds[i]}"
+
         print("Data preprocessing test passed.")
     
     @staticmethod
@@ -133,35 +163,33 @@ class TestData:
 
 class TestMDSA2:
     @staticmethod
-    def test_onepass(use_unet=False):
+    def test_onepass(use_unet=True, fold_eval=0):
         model_config = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
         model_config = OmegaConf.load(model_config)
         model_config.config_folder = "sam2_tenfold"
-        model_config.fold_eval = 0
+        model_config.fold_eval = fold_eval
+        # set batch size to 1 for comparison w/ unet
         mdsa2, train_loader, val_loader = initialize_mdsa2(model_config, use_unet=use_unet)
-        
-        mdsa2_averagemeter = AverageMeter(name="mdsa2")
-        sa_averagemeter = AverageMeter(name="sa2")
         
         for batch in val_loader:
             with torch.no_grad():
                 metrics_sa2, metrics_mdsa2 = mdsa2(batch)
-                for key in metrics_sa2.keys():
-                    sa_averagemeter.update(metrics_sa2[key]['avg'], n=1)
-                if use_unet:
-                    for key in metrics_mdsa2.keys():
-                        mdsa2_averagemeter.update(metrics_mdsa2[key]['avg'], n=1)
-        print("SA2 Average Metrics:", sa_averagemeter.avg, sa_averagemeter.cache)
+                # print("SA2 metrics:", metrics_sa2)
+                # print("MD-SA2 metrics:", metrics_mdsa2)
+        
+        # send to json
+        with open(f"test_metrics_sa2_fold_{model_config.fold_eval}.json", "w") as f:
+            json.dump(mdsa2.metric_accumulator_sa2.get_metrics(), f, indent=4)
 
         if use_unet:
-            print("MD-SA2 Average Metrics:", mdsa2_averagemeter.avg, mdsa2_averagemeter.cache)
-        
-        print("MDSA2 one-pass test passed")
+            with open(f"test_metrics_mdsa2_fold_{model_config.fold_eval}.json", "w") as f:
+                json.dump(mdsa2.unet_model.metric_accumulator.get_metrics(), f, indent=4)
+        print("MDSA2 one-pass test passed for fold", model_config.fold_eval)
 
 if __name__ == "__main__":
     # run all tests
-    # TestData.test_preprocess()
-    # TestData.test_dataloading()
-    # TestData.visualize_test_and_image()
-    TestMDSA2.test_onepass(use_unet=False)  # test only SAM stage
-    TestMDSA2.test_onepass(use_unet=True)   # test full MD-SA2 model
+    TestData.test_preprocess()
+    TestData.test_dataloading()
+    TestData.visualize_test_and_image()
+    TestMDSA2.test_onepass(use_unet=False, fold_eval=0)  # test only SAM stage
+    TestMDSA2.test_onepass(use_unet=True, fold_eval=0)   # test full MD-SA2 model
