@@ -199,8 +199,8 @@ class TestMDSA2:
 
 if __name__ == "__main__":
     # run all tests
-    # TestData.test_preprocess()
-    # TestData.test_dataloading()
-    # TestData.visualize_test_and_image()
+    TestData.test_preprocess()
+    TestData.test_dataloading()
+    TestData.visualize_test_and_image()
     TestMDSA2.test_onepass(use_unet=False, fold_eval=0)  # test only SAM stage
     TestMDSA2.test_onepass(use_unet=True, fold_eval=0)   # test full MD-SA2 model

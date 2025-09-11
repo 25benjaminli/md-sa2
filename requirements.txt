@@ -28,3 +28,4 @@ tensorboard
 nibabel
 deepdiff
 numpy
+plotly

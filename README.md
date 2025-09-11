@@ -6,7 +6,7 @@ The goal of this repository is to provide a more streamlined implementation acce
 
 ## Tutorial
 
-Note: replace base_folder with your base folder path. Also, make sure you've downloaded the weights. Make sure you have at plenty of extra space available on your system (>50 GB to be safe) - I have written scripts that preprocess the images and store to the disk, which consumes storage. Also, NVIDIA GPU with CUDA support is required for accelerated computing. 
+Note: replace base_folder with your base folder path. Also, make sure you've downloaded the weights. Make sure you have at plenty of extra space available on your system (>50 GB to be safe) - I have written scripts that preprocess the images and store to the disk, which consumes storage. Also, NVIDIA GPU with CUDA support is required for accelerated computing (mine is an RTX 3060 and has CUDA version 12.2). 
 
 **1. download things (dataset, weights)**
 
@@ -51,7 +51,9 @@ If you want to run baseline U-Net models, run `eval_unet.py`. The U-net models w
 
 Running other vanilla segment-anything based models detailed in the paper will be available soon. Also, the option to use a low-rank adapted version of SA2 has been included - not originally part of the paper and sparsely tested. 
 
-Helpful repositories during this study: 
+Note: this code was primarily tested on a machine running linux. Windows may or may not be supported. 
+
+Below are some repositories/libraries that were very helpful during this study (code samples borrowed from and modified): 
 - https://github.com/facebookresearch/sam2
 - https://github.com/hitachinsk/SAMed
 - https://github.com/Project-MONAI/MONAI

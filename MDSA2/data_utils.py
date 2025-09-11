@@ -61,7 +61,6 @@ def replace_ending(path, endings):
     return path
 
 def generate_pseudo_files(di, fold_val):
-    base_data_dir = os.getenv("DATA_PATH")
     print("GENERATING PSEUDO FILES")
     import nibabel as nib
     endings = ["nii.gz", "nii"]

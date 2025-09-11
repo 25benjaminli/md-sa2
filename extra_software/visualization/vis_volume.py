@@ -22,8 +22,8 @@ vis_module = args.vis_module
 # ! recommended that you have already run the validation step of MD-SA2 or U-Net to generate the appropriate predictions
 modality_list = ['t1c', 't1n', 't2f']
 pred = np.load(f"volumes/aggregator/{str(volume_num).zfill(3)}_fold_0.npy")
-label = np.load(f"{os.getenv('DATA_PATH', '')}/preprocessed/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-seg.npy")
-volumes = [nib.load(f"{os.getenv('DATA_PATH', '')}/brats_africa/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-{modality}.nii.gz").get_fdata() for modality in modality_list]
+label = np.load(f"{os.getenv('PREPROCESSED_PATH', '')}/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-seg.npy")
+volumes = [nib.load(f"{os.getenv('DATASET_PATH', '')}/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-{modality}.nii.gz").get_fdata() for modality in modality_list]
 print("label shape", label.shape) # (1, 224, 224, 155)
 # convert label to (3, 224, 224, 155) one hot encoded by value 
 label = np.concatenate([(label == i).astype(np.float32) for i in range(1, 4)], axis=0)
