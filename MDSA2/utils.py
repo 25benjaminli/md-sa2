@@ -27,7 +27,6 @@ from matplotlib.widgets import Slider
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
-# os.getenv("DATASET_PATH") = os.path.join(os.getenv("PROJECT_PATH"), 'data', 'brats', 'BraTS2020_TrainingData', 'MICCAI_BraTS2020_TrainingData')
 def join(*paths):
    return os.path.normpath(os.path.join(*paths))
 

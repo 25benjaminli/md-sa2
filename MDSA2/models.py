@@ -35,6 +35,7 @@ import yaml
 from omegaconf import OmegaConf
 from tqdm import tqdm
 import monai
+from monai.networks.nets import SwinUNETR
 
 class UNetWrapper():
     """
@@ -50,6 +51,9 @@ class UNetWrapper():
             
         elif config.model_type == "DynUNet":
             self.model = DynUNet(**model_params).to("cuda")
+
+        elif config.model_type == "SwinUNETR":
+            self.model = SwinUNETR(**model_params).to("cuda")
 
         self.train_loader = train_loader
         self.val_loader = val_loader

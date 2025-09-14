@@ -2,7 +2,7 @@
 vit_name: "tiny" # tiny, small, b+
 model_type: "sam_2"
 sam_ckpt: "checkpoints/sam2_hiera_t.pt"
-# ft_ckpt: "checkpoints/best_model_sam2_fold0.pth"
+
 ft_ckpt: null
 rank: -1 # -1 means don't use
 
@@ -16,18 +16,18 @@ use_prev_mask: false
 visualize: false
 
 # debugging/viz intervals
-save_img: false # false for now?
+save_img: false 
 
 # data
 img_size: 384
-seg_size: 224 # this represents segmentation dimensions
+seg_size: 224 # dimensions to calculate metrics
 num_classes: 3
 oversample: 0
 num_slices: 143
 modalities: ["t1c", "t1c", "t1c"]
 # modalities: ["t2f", "t2w", "t1c", "t1n"]
 
-# modalities_yolo: ["flair", "t1ce", "t2"]https://dl.fbaipublicfiles.com/segment_anything_2/072824/
+
 
 # detection
 modalities_yolo: []

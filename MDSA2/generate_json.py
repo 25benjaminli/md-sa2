@@ -41,8 +41,7 @@ if __name__ == '__main__':
     di, fold_data_orig = generate_json(dataset_path=dataset_path, modalities=config.modalities, fold_num=config.fold_num, \
                         seg_key='seg', config=config, ending=ending) # only use three modalities, each fold is 369/16=23
     
-    json_path = "train.json"
-    with open(json_path, 'w') as f:
+    with open("train.json", 'w') as f:
         json.dump(di, f, indent=4)
 
     fold_data_orig_path = "fold_data.json"
