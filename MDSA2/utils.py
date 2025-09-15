@@ -137,43 +137,6 @@ def set_deterministic(seed):
 
   monai.utils.set_determinism(seed)
 
-
-def plot_img_test(img, label, preds, writer, iteration,epoch,image_time, log_dir, bbox_gt=None, bbox_pred=None, save=False, batch_val=0, vol_name=None, isTrain=False):
-    # img: 4, 3, 224, 224
-    # label: 4, 3, 224, 224
-    # preds: 4, 3, 224, 224
-    # print("image, label shape", img.shape, label.shape)
-    mpl.rcParams['figure.dpi'] = 140
-    
-    # print(img.shape, label.shape, preds.shape)
-    img_curr, label_curr, pred_curr = img[batch_val].cpu().numpy(), label[batch_val].cpu().numpy(), preds[batch_val].cpu().numpy()
-
-    # maxxed_label = torch.argmax(img_curr, axis=0) # assuming 3, 224, 224
-    fig, axes = plt.subplots(img_curr.shape[0], 3)
-    fig.tight_layout()
-
-    fontdict = {'fontsize': 10, 'fontweight': 'medium'}
-
-    image_modalities = ['flair', 't1', 't1ce']
-    label_tags = ['tumor core', 'whole tumor', 'enhancing tumor']
-
-    # first row is image
-    for col in range(3):
-        axes[0, col].imshow(img_curr[col])
-        axes[0, col].set_title(f'{image_modalities[col]}', fontdict=fontdict)
-    
-    # second row is ground truth
-    for col in range(3):
-        axes[1, col].imshow(label_curr[col])
-        axes[1, col].set_title(f'GT {label_tags[col]}', fontdict=fontdict)
-
-    # third row is predictions
-    for col in range(3):
-        axes[2, col].imshow(pred_curr[col])
-        axes[2, col].set_title(f'PRED {label_tags[col]}', fontdict=fontdict)
-
-    plt.close(fig)
-
 def adjust_optimizer_lr(optimizer, args, iter_num):
     if args.use_warmup and iter_num < args.warmup_period:
           lr_ = args.base_lr * ((iter_num + 1) / args.warmup_period)
@@ -256,12 +219,12 @@ class ArrHelper:
 
   def plot(self, axes, print_channel_arr=None, print_channel_plot=None, bbox=None):
     """
-    @param axes: axes to draw on
-    @param print_channel_arr: if None, means print all channels in the image. Otherwise, plot that specific channel.
+    axes: axes to draw on
+    print_channel_arr: if None, means print all channels in the image. Otherwise, plot that specific channel.
     Assumes B C H W format. For my purposes, B is just 1.
-    @param print_channel_plot: if None, it means you don't care where your image goes in the
+    print_channel_plot: if None, it means you don't care where your image goes in the
 
-    @param bbox: default None. Assumes typical (x1, y1, x2, y2) format.
+    bbox: default None. Assumes typical (x1, y1, x2, y2) format.
     Assumes B 1 4 format. B is just 1
 
     """
@@ -407,7 +370,6 @@ def register_net_sam2(model_config):
   elif model_config.vit_name == "large":
     model_cfg = "sam2_hiera_l.yaml"
   
-  # load the cfg
   import yaml
 
   base_path = os.getenv("PROJECT_PATH")
@@ -415,7 +377,7 @@ def register_net_sam2(model_config):
   with open(f"{base_path}/MDSA2/segment_anything_2/sam2_configs/{model_cfg}", 'r') as stream:
     model_cfg_di = yaml.safe_load(stream)
     # modify the image_size parameter
-    model_cfg_di['model']['image_size'] = model_config.img_size
+    model_cfg_di['model']['image_size'] = model_config.img_size # override the image size in case we use custom
     model_cfg_di['model']['compile_image_encoder'] = model_config.compile
 
   # write the modified cfg to the same file
@@ -431,14 +393,11 @@ def register_net_sam2(model_config):
 
   elif model_config.vit_name == "large":
       sam2_checkpoint = f"{base_path}/MDSA2/checkpoints/sam2_hiera_large.pt"
-  # elif model_config.vit_name == "none":
-  #     sam2_checkpoint = None
 
   sam2_model = build_sam2(model_cfg, sam2_checkpoint, device="cuda")
   predictor = SAM2ImagePredictor(sam_model=sam2_model)
 
-  # Set training parameters
-
+  # freeze prompt/memory encoders
   predictor.model.sam_prompt_encoder.train(False)
   predictor.model.memory_encoder.train(False)
 
@@ -446,6 +405,7 @@ def register_net_sam2(model_config):
   predictor.model.image_encoder.train(True)
   predictor.model.sam_mask_decoder.train(True)
   from models import LoRA_SAM2, SAM2_Regular
+
   if model_config.rank > 0:
     print("using lora rank", model_config.rank)
     net = LoRA_SAM2(predictor, model_config.rank).cuda()
@@ -454,9 +414,9 @@ def register_net_sam2(model_config):
       net.load_lora_parameters(model_config.ft_ckpt)
   else:
     # print("using regular")
-    net = SAM2_Regular(predictor).cuda() # means you just use the regular one
+    net = SAM2_Regular(predictor).cuda() 
 
-    if model_config.ft_ckpt is not None: # not actually lora, but just the pretrained one...
+    if model_config.ft_ckpt is not None: 
       # print("loading ckpt", model_config.ft_ckpt)
       thing = torch.load(model_config.ft_ckpt, weights_only=False)
       if "state_dict" in thing.keys():
@@ -501,7 +461,6 @@ def generate_snapshot_path(config, output_path='./runs', isVal = False):
     else:
       ct = 0
       for f in os.listdir(f'{output_path}/{config.dataset}'):
-        # print(f, config.custom_name in f)
         if config.custom_name in f:
            ct+=1
 
@@ -526,75 +485,8 @@ def run_fn_and_timer(fn, name, **kwargs):
   print(f'{name} took {end - start} seconds')
   return result
 
-
-def print_data(logger, acc_dict,exclude_keys=[]):
-    for key in acc_dict:
-        # print(f"ACCURACY FOR {key}")
-        if type(acc_dict[key]) == AverageMeter:
-            avg_metric = acc_dict[key].avg
-            logger.info(f"{key}: {avg_metric}")
-            for i, metric in enumerate(avg_metric):
-                logger.info(f"{key} {i}: {metric}")
-            logger.info(
-                " ".join([f"{key} {i}: {metric}" for i, metric in enumerate(avg_metric)]),
-                ", avg:", float(np.mean(avg_metric))
-            )
-        elif type(acc_dict[key]) == list or type(acc_dict[key]) == np.ndarray:
-            # logger.info(f"{key}: {acc_dict[key]}")
-            logger.info(
-                f"{key} {acc_dict[key]} avg: {np.mean(acc_dict[key]).tolist()}"
-            )
-        elif key not in exclude_keys:
-            logger.info(f"{key}: {acc_dict[key]}")
-
-    """
-        ", time {:.2f}s".format(time.time() - start_time),
-    ", avg inference time", np.mean(inference_durations)
-    """
     
 def calculate_heuristic(info, weights, minus, volume_list):
-  # calculate a single time to sort for curriculum learner
-  #  mean_m, mean_d, mean_n = np.mean(metrics), np.mean(distance_vars), np.mean(num_pixels)
-  """
-  info: {
-    "metrics": np array (300)
-    "...": np array (300)
-    "...": np array (300)
-    ...
-  }
-
-  minus: {
-    "metrics": np array (300),
-    ...
-  }
-
-  volume_list: ['135', '074', ...]
-
-  pseudocode: 
-  vol_maps = {}
-  vol_list = [] # size
-
-  # nonzeros are the same regardless of the key
-  random_key = info.keys()[0]
-  nonzeros = info[random_key].nonzeros # return the indices of nonzeros
-
-
-  for current_volume in nonzeros:
-    # this will return the current volume number (since it's the index)
-    index_of_volume = volume_list.indexof(current_volume)
-    # now we can zip this index together with the stats
-
-    aggregated_value = 0
-    for key in info:
-      value = (info[k][current_volume]/np.max(info[key]))
-      aggregated_value += (1-value) * weights[key] if minus[key] else value * weights[key]
-    
-    arr.append((index_of_volume, aggregated_value))
-
-  return arr
-  
-  """
-
   heuristic_summed = [] # size
   heuristic_arr = []
 

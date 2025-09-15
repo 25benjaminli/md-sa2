@@ -2,27 +2,19 @@ import json
 import os
 import random
 import shutil
-import time
 import posixpath
 import math
-import pathlib
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Sampler, BatchSampler
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from dotenv import load_dotenv
 import pandas as pd
 
 import monai
-from monai.metrics.meandice import DiceMetric
 from monai.data.dataloader import DataLoader
 from monai.data.dataset import Dataset
 
@@ -36,9 +28,9 @@ from monai.transforms.intensity.dictionary import (
     NormalizeIntensityd, RandShiftIntensityd, RandScaleIntensityd, ScaleIntensityRangePercentilesd
 )
 from monai.transforms.croppad.dictionary import (
-    CenterSpatialCropd, CropForegroundd, RandSpatialCropd
+    CenterSpatialCropd
 )
-from utils import get_volume_number, join, set_deterministic
+from utils import join, set_deterministic
 import yaml
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="monai.*")
@@ -687,15 +679,6 @@ def get_dataloaders(config, verbose=False, only_val_transforms=False, modality_t
 
     return train_loader, val_loader, file_paths
 
-
-def generate_folds_aggregator(direc, fold_train, fold_val, modalities, use_ref_volume=True):
-    
-    json_path = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
-    # a single path: home/benjaminli/Documents/coding/md-sa2-eval/data/preprocessed/BraTS-SSA-00041-000/BraTS-SSA-00041-000-t2f.npy
-    # 
-
-    return train_paths, valid_paths
-
 def get_aggregator_loader(batch_size, roi=(128,128,128), file_paths={}, num_workers=0):
     from utils import set_deterministic
 
@@ -708,8 +691,6 @@ def get_aggregator_loader(batch_size, roi=(128,128,128), file_paths={}, num_work
         [
             AddNameFieldAggregator(keys=image_label_arr, send_real_path=False),
             transforms.LoadImaged(keys=image_label_arr),
-            # Transpose_Transform(keys=image_label_arr),
-            # transforms.EnsureChannelFirstd(keys=image_label_arr),
             transforms.CropForegroundd(
                 keys=image_label_arr,
                 source_key="image",
@@ -723,7 +704,6 @@ def get_aggregator_loader(batch_size, roi=(128,128,128), file_paths={}, num_work
             transforms.RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=0),
             transforms.RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=1),
             transforms.RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=2),
-            # rand zoom
             transforms.RandZoomd(keys=image_label_arr, prob=0.3, min_zoom=0.8, max_zoom=1.2),
             
         ]
@@ -767,8 +747,6 @@ class Transpose_Transform(transforms.transform.MapTransform):
             d[key] = torch.permute(d[key], (0, 2,3,1))
 
         return d
-
-
 
 def get_unet_loader(batch_size, fold_train, fold_val, roi=(128,128,128), modalities=["t2f", "t1c", "t1n"]):
     config_path = os.path.join(os.getenv("PROJECT_PATH", ""), "data", "current_data_config.yaml")

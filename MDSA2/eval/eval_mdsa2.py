@@ -1,11 +1,10 @@
 import torch
 
-# use sys path append to import from parent directory
 import sys
 import os
 from pathlib import Path
 
-# Add parent directory
+# scuffed system to avoid using packages, will fix later
 parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 
@@ -18,7 +17,6 @@ from models import initialize_mdsa2
 
 sys.path.pop(0)
 
-# Set matplotlib to use non-interactive backend to avoid Qt issues
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import json

@@ -16,7 +16,6 @@ manually verify that the models are doing things correctly.
 
 import torch
 
-# use sys path append to import from parent directory
 import sys
 import os
 from pathlib import Path
@@ -34,7 +33,6 @@ from models import initialize_mdsa2
 
 sys.path.pop(0)
 
-# Set matplotlib to use non-interactive backend to avoid Qt issues
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import json
@@ -53,7 +51,6 @@ class TestData:
         assert sorted(preprocessed_folder_names) == sorted(brats_africa_folder_names), "File names in preprocessed folder do not match brats_africa dataset."
 
         # check if the files within within each folder in preprocessed are correct (i.e. it should be 3 modalities: t1c, t1n, t2f)
-        # BraTS-SSA-00002-000-seg.npy
         for folder_name in preprocessed_folder_names:
             folder_path = join(os.getenv("PREPROCESSED_PATH", ""), folder_name)
             files = os.listdir(folder_path)
@@ -62,7 +59,6 @@ class TestData:
             assert sorted(modalities) == sorted(['seg', 't1c', 't1n', 't2f']), f"Folder {folder_name} does not contain correct modality files."
         
         # this is a pretty janky way to check that they match, but it works
-        # read train.json and confirm that all fold 0s correspond to expected_folds.json
         with open(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json"), 'r') as f:
             train_data = json.load(f)
         
