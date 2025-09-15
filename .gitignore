@@ -21,7 +21,11 @@ extra_software/visualization/temp/
 
 MDSA2/checkpoints/sam2_hiera_tiny.pt
 MDSA2/eval/cv_metrics.json
-MDSA2/train/
+MDSA2/eval/eval_pretrain.py
+MDSA2/eval/runs_unet/
+
+
+MDSA2/train/train_unet.py
 
 MDSA2/experiments
 comparisons/model.pt

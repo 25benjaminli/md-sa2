@@ -115,6 +115,7 @@ class UNetWrapper():
             if idx == 0 and self.verbose:
                 print(f'{batch_data["image_title"]}, target shape', data.shape, target.shape, data.mean(), data.std())
 
+            
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
                 logits = self.model(data)
                 loss = self.loss_func(logits, target)
@@ -204,7 +205,6 @@ class MDSA2(nn.Module):
         self.sam2_model = sam2_model
         self.unet_model = unet_model
         self.config = config
-        self.metric_accumulator_mdsa2 = MetricAccumulator()
         self.metric_accumulator_sa2 = MetricAccumulator()
 
         loss_functions = {
@@ -262,7 +262,85 @@ class MDSA2(nn.Module):
         # if you desire to visualize vols, you can do soemthing with val_outputs here.
         
         return self.metric_accumulator_sa2.get_metrics(), self.unet_model.metric_accumulator.get_metrics() if self.unet_model else {}
+    
+    def train_loop_sa(self, train_loader):
+        running_train_loss = 0
+        train_begin = time.time()
+        for idx, batch in tqdm(enumerate(train_loader), total=len(train_loader), disable=False):
+            image, label = batch["image"].cuda(), batch["label"].cuda()
+            
+            for current_slice in range(image.shape[-1]):
+                with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.config.use_amp):            
+                    low_res_labels = F.interpolate(label[...,current_slice], self.config.img_size//4, mode="nearest-exact")
+                    outputs = self.sam2_model(image[...,current_slice], upscale=True)
 
+                    assert outputs['low_res_logits'].shape == low_res_labels.shape, f"shapes of logits: {outputs['low_res_logits'].shape} shape of labels {low_res_labels.shape}"
+                    loss = self.loss_func(outputs['low_res_logits'], low_res_labels) # what if I move this function OUTSIDE? and calculate on overall 3d shape
+
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.optimizer.zero_grad()
+                    running_train_loss += loss.detach().item()
+
+                del outputs, loss, low_res_labels
+                # low_res_pred = torch.sigmoid(outputs['low_res_logits']) > config.conf_threshold
+
+        return running_train_loss / (len(train_loader)*image.shape[-1]), (time.time() - train_begin) / len(train_loader)
+
+    def val_loop_sa(self, val_loader):
+        self.sam2_model.eval()
+
+        for batch in tqdm(val_loader, total=len(val_loader)):
+            image, label = batch['image'].cuda(), batch['label'].cuda()
+            arr_pred = torch.zeros(size=(label.shape)).cuda()
+
+            t1 = time.time()
+            # print("image shape", image.shape)
+            with torch.inference_mode(), torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
+                for current_slice in range(image.shape[-1]):
+                    image_sliced = image[...,current_slice]
+                    outputs = self.sam2_model(image_sliced, repeat_image=True) # multimask_output=False,boxes=bbox_sam,repeat_image=False
+                    arr_pred[...,current_slice] = torch.sigmoid(outputs['prd_masks']) > self.config.conf_threshold
+
+            size_resized = (self.config.seg_size, self.config.seg_size, image.shape[-1])
+            # ! avoid the resize? 
+            arr_pred = nn.functional.interpolate(input=arr_pred, size=size_resized, mode="nearest-exact")
+            label = nn.functional.interpolate(input=label, size=size_resized, mode="nearest-exact")
+            t_spent = (time.time()-t1)/len(arr_pred)
+            for case in range(len(arr_pred)):
+                self.metric_accumulator_sa2.update(y_pred=arr_pred[case].unsqueeze(0), y_true=label[case].unsqueeze(0), time_spent=t_spent)
+
+        mets = self.metric_accumulator_sa2.get_metrics()
+        self.metric_accumulator_sa2.reset()
+        
+        return mets
+    
+    def generate_and_save(self, train_loader, val_loader, save_folder):
+        self.sam2_model.eval()
+        os.makedirs(save_folder, exist_ok=True)
+
+        with torch.no_grad():
+            for loader in [train_loader, val_loader]:
+                for batch in tqdm(loader, total=len(loader)):
+                    image, label, volume_name = batch["image"].cuda(), batch["label"].cuda(), batch["image_title"]
+                    arr_pred = torch.zeros(image.shape).cuda()
+                    
+                    for current_slice in range(image.shape[4]):
+                        image_sliced = image[..., current_slice]
+                        with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.config.use_amp):
+                            outputs = self.sam2_model(image_sliced, repeat_image=True)
+                            
+                        arr_pred[..., current_slice] = torch.sigmoid(outputs['prd_masks']) > self.config.conf_threshold
+
+                    # Interpolate arr pred
+                    size_resized = (self.config.seg_size, self.config.seg_size, image.shape[-1])
+                    arr_pred = nn.functional.interpolate(input=arr_pred, size=size_resized, mode="nearest-exact")
+
+                    for case in range(len(arr_pred)):
+                        np.save(join(save_folder, f"BraTS-SSA-{volume_name[case].zfill(5)}-000-pred.npy"), arr_pred[case].detach().cpu().numpy())
+                        np.save(join(save_folder, f"BraTS-SSA-{volume_name[case].zfill(5)}-000-label.npy"), label[case].detach().cpu().numpy())
+                        np.save(join(save_folder, f"BraTS-SSA-{volume_name[case].zfill(5)}-000-brain_volume.npy"), image[case].detach().cpu().numpy())
 
 # https://github.com/25benjaminli/sam2lora
 class LoRA_SAM2(nn.Module):
@@ -489,17 +567,10 @@ class SAM2_Regular(nn.Module):
         }
 
 
-def initialize_mdsa2(model_config, dataloaders, use_unet=True) -> MDSA2:    
+def initialize_mdsa2(model_config, dataloaders, use_unet=True, verbose=False) -> MDSA2:    
     train_loader, val_loader = dataloaders
 
-    path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_val[0]}")
-
-    model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", path_thing, "best_model_sam2.pth")
-    model_config.batch_size_train=1 # manually set to 1 for comparison
-    model_config.batch_size_val=1 # manually set to 1 for comparison
-    model_config.snapshot_path = generate_rndm_path(join("eval", "runs", "aggregator"))
-
-    assert os.path.exists(model_config.ft_ckpt), f"fine tuned ckpt {model_config.ft_ckpt} does not exist"
+    assert model_config.ft_ckpt is None or os.path.exists(model_config.ft_ckpt), f"fine tuned ckpt {model_config.ft_ckpt} does not exist"
     print("model checkpoint", model_config.ft_ckpt)
 
     sam2 = register_net_sam2(model_config)
@@ -539,11 +610,13 @@ def initialize_mdsa2(model_config, dataloaders, use_unet=True) -> MDSA2:
             "trans_bias": True,
         }
 
-        aggregator_unet = UNetWrapper(train_loader=None, val_loader=val_loader, loss_func=None, 
-        use_scaler=False, optimizer=None, config=config, verbose=False, **model_params)
+        aggregator_unet = UNetWrapper(train_loader=train_loader, val_loader=val_loader, loss_func="Dice", 
+        use_scaler=True, optimizer="AdamW", config=config, verbose=verbose, **model_params)
 
         # load aggregator unet weights
-        aggregator_unet.load_weights(join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_val[0]}", "best_model.pth"))
+        if model_config.agg_ckpt is not None and os.path.exists(model_config.agg_ckpt):
+            print("loading aggregator unet weights from", model_config.agg_ckpt)
+            aggregator_unet.load_weights(model_config.agg_ckpt)
 
     else:
         aggregator_unet = None

@@ -20,7 +20,7 @@ volume_num = args.volume_num  # so long as you have the file in the right positi
 vis_module = args.vis_module
 
 # ! recommended that you have already run the validation step of MD-SA2 or U-Net to generate the appropriate predictions
-modality_list = ['t1c', 't1n', 't2f']
+modality_list = ['t2f', 't1c', 't1n']
 pred = np.load(f"volumes/aggregator/{str(volume_num).zfill(3)}_fold_0.npy")
 label = np.load(f"{os.getenv('PREPROCESSED_PATH', '')}/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-seg.npy")
 volumes = [nib.load(f"{os.getenv('DATASET_PATH', '')}/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-{modality}.nii.gz").get_fdata() for modality in modality_list]

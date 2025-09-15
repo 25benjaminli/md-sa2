@@ -4,6 +4,7 @@ model_type: "sam_2"
 sam_ckpt: "checkpoints/sam2_hiera_t.pt"
 
 ft_ckpt: null
+agg_ckpt: null
 rank: -1 # -1 means don't use
 
 

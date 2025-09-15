@@ -44,7 +44,6 @@ class MetricAccumulator():
                 val, not_nans = self.metric_dict[metric_name].aggregate()
                 self.meters[metric_name].update(val.cpu().numpy(), n=not_nans.cpu().numpy())
                 self.metric_dict[metric_name].reset()
-                # print("calculated", val, "for metric", metric_name)
             else:
                 # assume that it just yields an output
                 val = self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
@@ -57,6 +56,7 @@ class MetricAccumulator():
         summary_dict = {}
         for key in self.meters.keys():
             # print("avg, stdev", self.meters[key].avg, self.meters[key].stdev)
+            # skip if inference meter
             pyList = self.meters[key].avg.tolist()
 
             summary_dict[key] = {

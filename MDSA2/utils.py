@@ -23,6 +23,9 @@ import random
 import gc
 import SimpleITK as sitk
 from matplotlib.widgets import Slider
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="monai.*")
+
 
 from dotenv import load_dotenv
 load_dotenv(override=True)

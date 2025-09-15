@@ -13,7 +13,7 @@ import numpy as np
 import os
 from data_utils import get_dataloaders
 from omegaconf import OmegaConf
-from utils import set_deterministic, join
+from utils import set_deterministic, join, generate_rndm_path
 from models import initialize_mdsa2
 
 sys.path.pop(0)
@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import json
 import argparse
+import gc
 
 if __name__ == "__main__":
     # run all tests
@@ -37,19 +38,27 @@ if __name__ == "__main__":
         folds_to_test = [args.fold_val]
 
     final_metrics = {}
-    for fold_val in folds_to_test:
+    for fold_idx, fold_val in enumerate(folds_to_test):
         print(f"---- evaluating fold {fold_val} ----")
         model_config = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "config", "sam2_tenfold", "config_train.yaml")
         model_config = OmegaConf.load(model_config)
         model_config.config_folder = "sam2_tenfold"
+        model_config.fold_train = [a for a in range(10) if a != fold_val]
         model_config.fold_val = [fold_val]
+        if fold_idx == len(folds_to_test) - 1: 
+            model_config.snapshot_path = generate_rndm_path("runs_mdsa2")
+            print("writing to ", model_config.snapshot_path)
+        model_config.agg_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_val[0]}", "best_model.pth")
 
         details = OmegaConf.load(open(join(os.getenv("PROJECT_PATH", ""), 'MDSA2', 'config', "sam2_tenfold", 'details.yaml'), 'r'))
         model_config = OmegaConf.merge(model_config, details)
         model_config.dataset = "brats_africa"
         # set batch size to 1 for comparison w/ unet
         set_deterministic(42)
-        train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1, verbose=False)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1, verbose=False)
+        
+        path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_val[0]}")
+        model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", path_thing, "best_model_sam2.pth")
         mdsa2 = initialize_mdsa2(model_config, (train_loader, val_loader))
 
         for batch in val_loader:
@@ -64,16 +73,29 @@ if __name__ == "__main__":
 
         # send to json
         if args.fold_val != -1:
-            with open(f"test_metrics_sa2_fold_{model_config.fold_val}.json", "w") as f:
+            with open(join(model_config.snapshot_path, f"sa2_fold_{model_config.fold_val}.json"), "w") as f:
                 json.dump(mdsa2.metric_accumulator_sa2.get_metrics(), f, indent=4)
 
-            with open(f"test_metrics_mdsa2_fold_{model_config.fold_val}.json", "w") as f:
+            with open(join(model_config.snapshot_path, f"mdsa2_fold_{model_config.fold_val}.json"), "w") as f:
                 json.dump(mdsa2.unet_model.metric_accumulator.get_metrics(), f, indent=4)
 
         final_metrics[f"fold_{model_config.fold_val}"] = {
             "sa2": mdsa2.metric_accumulator_sa2.get_metrics(),
             "mdsa2": mdsa2.unet_model.metric_accumulator.get_metrics()
         }
+
+        # reset the metric accumulators after each fold
+        mdsa2.metric_accumulator_sa2.reset()
+        mdsa2.unet_model.metric_accumulator.reset()
+
+        del metrics_sa2, metrics_mdsa2
+        del train_loader, val_loader, file_paths
+        del mdsa2
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
 
     # get the average from ALL folds
     if len(folds_to_test) > 1:
@@ -108,6 +130,8 @@ if __name__ == "__main__":
         
         final_metrics["average_over_folds"] = avg_metrics
 
-    with open(f"cv_metrics.json", "w") as f:
+    cv_path = join(model_config.snapshot_path, "cv_metrics.json")
+    print("sent final metrics to ", cv_path)
+    with open(cv_path, "w") as f:
         json.dump(final_metrics, f, indent=4)
         

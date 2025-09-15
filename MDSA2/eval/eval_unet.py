@@ -9,7 +9,7 @@ sys.path.insert(0, str(parent_dir))
 from models import UNetWrapper
 from omegaconf import OmegaConf
 import yaml
-from utils import join
+from utils import join, generate_rndm_path
 from data_utils import get_unet_loader
 import json
 import argparse
@@ -22,6 +22,10 @@ if __name__ == "__main__":
     parser.add_argument('--weights_folder', type=str, default="dynunet", help='folder where weights for all folds are stored')
     parser.add_argument('--model_type', type=str, default="DynUNet", help='model type (DynUNet or swinunetr)')
     parser.add_argument("--fold_val", type=int, default=-1, help="Fold to evaluate. -1 means do the full CV.")
+    
+    base_path = generate_rndm_path("runs_unet")
+    # base_path = "runs_unet/7d3fs6fb5s"
+
     
     args = parser.parse_args()
     if args.fold_val == -1:
@@ -65,11 +69,12 @@ if __name__ == "__main__":
         raise ValueError("model_type must be either DynUNet or swinunetr (case sensitive)")
     
     final_metrics = {}
+
     for fold_val in folds_to_test:
         fold_train = [a for a in range(10) if a != fold_val]
 
         train_loader, val_loader = get_unet_loader(batch_size=1, fold_train=fold_train,
-                                           fold_val=fold_val, roi=roi, modalities=['t2f', 't1c', 't1n'])
+                                           fold_val=[fold_val], roi=roi, modalities=['t2f', 't1c', 't1n'])
         config = OmegaConf.create({
             "model_type": args.model_type, 
             "use_ref_volume": False,
@@ -78,7 +83,7 @@ if __name__ == "__main__":
             "roi": [128, 128, 128],
             "sw_batch_size": 1,
             "infer_overlap": 0.5,
-            "fold_val": fold_val,
+            "fold_val": [fold_val],
             "fold_train": fold_train,
             "volumes_to_collect": volumes_to_collect,
             "model_name": f"{args.model_type}_fold{fold_val}",
@@ -86,48 +91,45 @@ if __name__ == "__main__":
     
         unet_model = UNetWrapper(train_loader=train_loader, val_loader=val_loader, loss_func="Dice", 
         use_scaler=True, optimizer="AdamW", config=config, verbose=False, **model_params)
-        weights_path = join(os.getenv("PROJECT_PATH", ""), "checkpoints", args.weights_folder, f"{args.model_type}_fold_{fold_val}.pt")
+        weights_path = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", args.weights_folder, f"{args.model_type}_fold_{fold_val}.pt")
         unet_model.load_weights(weights_path=weights_path)
         
         json_metrics = unet_model.validate_epoch()
-        metric_path = f"best_metrics_{config.model_type}_{fold_val}.json"
+        metric_path = join(base_path, f"best_metrics_{config.model_type}_{fold_val}.json")
         print("sending metrics to ", metric_path)
         with open(metric_path, "w") as f:
             json.dump(json_metrics, f, indent=4)
 
         final_metrics[f"fold_{fold_val}"] = json_metrics
 
-    # get the average from ALL folds
+    
     if len(folds_to_test) > 1:
         avg_metrics = {}
         for fold in folds_to_test:
             fold_metrics = final_metrics[f"fold_{fold}"]
-            for key, value in fold_metrics.items():
-                """
-                value: {
-                    "classwise_avg": pyList,
-                    "avg": sum(pyList)/3,
-                    "stdev": self.meters[key].stdev.tolist(),
-                }
-                """
-                for metric_type, metric_value in value.items():
-                    if metric_type not in avg_metrics:
-                        avg_metrics[metric_type] = []
-                    if isinstance(metric_value, list):
-                        avg_metrics[metric_type].append(np.array(metric_value))
+            for metric_name, value in fold_metrics.items():
+                if metric_name not in avg_metrics:
+                    avg_metrics[metric_name] = {}
+                
+                for k, v in value.items():  # k is "avg", "classwise_avg", "stdev"
+                    if k not in avg_metrics[metric_name]:
+                        avg_metrics[metric_name][k] = []
+                    
+                    if isinstance(v, list):
+                        avg_metrics[metric_name][k].append(np.array(v))
                     else:
-                        avg_metrics[metric_type].append(metric_value)
+                        avg_metrics[metric_name][k].append(v)
 
-        for metric_type, metric_values in avg_metrics.items():
-            if isinstance(metric_values[0], np.ndarray):
-                # compute mean along dim 0
-                avg_metrics[metric_type] = (np.mean(np.stack(metric_values, axis=0), axis=0)).tolist()
-            else:
-                avg_metrics[metric_type] = float(np.mean(metric_values))
+        for metric_name, metric_data in avg_metrics.items():
+            for sub_key, values in metric_data.items():
+                if isinstance(values[0], np.ndarray):
+                    avg_metrics[metric_name][sub_key] = np.mean(np.stack(values, axis=0), axis=0).tolist()
+                else:
+                    avg_metrics[metric_name][sub_key] = float(np.mean(values))
 
         final_metrics["average_over_folds"] = avg_metrics
 
-        avg_metric_path = f"average_metrics_{args.model_type}_all_folds.json"
+        avg_metric_path = join(base_path, f"average_metrics_{args.model_type}_all_folds.json")
         print("sending average metrics to ", avg_metric_path)
         with open(avg_metric_path, "w") as f:
             json.dump(final_metrics, f, indent=4)

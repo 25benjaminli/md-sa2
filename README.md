@@ -1,6 +1,6 @@
 ## Code for [MD-SA2: optimizing Segment Anything 2 for multimodal, depth-aware brain tumor segmentation in sub-Saharan populations](https://www.spiedigitallibrary.org/journals/journal-of-medical-imaging/volume-12/issue-02/024007/MD-SA2--optimizing-Segment-Anything-2-for-multimodal-depth/10.1117/1.JMI.12.2.024007.full). 
  
-This repository implements a hybrid Segment Anything 2 and U-Net architecture for tackling brain tumor segmentation with low-quality MRI scans from sub-Saharan Africa, as well as including a comprehensive suite of evaluation criteria & comparisons. The training script (and more analysis/visualization utilities) will be released at a later date (currently limited to evaluation). 
+This repository implements a hybrid Segment Anything 2 and U-Net architecture for tackling brain tumor segmentation with low-quality MRI scans from sub-Saharan Africa, as well as including a comprehensive suite of evaluation criteria & comparisons. The full implementation is not yet available (see the checklist at the bottom of this README). 
 
 The goal of this repository is to provide a more streamlined implementation accessible to a wider audience, as compared to the original code which was not well compartmentalized. Please raise issues in the github repo if you are experiencing errors. 
 
@@ -49,6 +49,8 @@ Running MD-SA2 on all folds: go to `eval` folder and run `eval_mdsa2.py`.
 
 If you want to run baseline U-Net models, run `eval_unet.py`. The U-net models were trained with different image dimensions (too much memory consumption and time spent with higher dimensions), so ensure that you have run the following prior to running `eval_unet.py`: `python preprocess.py --overrides preprocessing.resize_dims=[224,224] --expected_folds expected_folds.json`. If you intend to run MD-SA2 after running U-Net, be sure to rerun the `python preprocess.py` for the dimensions to match up. 
 
+Also, visit `extra_software/visualization/vis_volume.py` for some cool visualizations of predictions, labels, and brain volumes. Note that this does require you to have run MD-SA2 or the other models, collected their predictions, and moved them into a folder under this directory called "volumes" (this should be done automatically during MD-SA2's validation process, if not available then do it manually). 
+
 Running other vanilla segment-anything based models detailed in the paper will be available soon. Also, the option to use a low-rank adapted version of SA2 has been included - not originally part of the paper and sparsely tested. 
 
 Note: this code was primarily tested on a machine running linux. Windows may or may not be supported. 
@@ -57,3 +59,12 @@ Below are some repositories/libraries that were very helpful during this study (
 - https://github.com/facebookresearch/sam2
 - https://github.com/hitachinsk/SAMed
 - https://github.com/Project-MONAI/MONAI
+
+
+working modules
+- [x] unit_tests.py
+- [x] train_mdsa2.py
+- [x] eval_mdsa2.py
+- [x] eval_unet.py
+- [ ] train_unet.py
+- [ ] eval_pretrain.py

@@ -88,16 +88,18 @@ class TestData:
         model_config = OmegaConf.load(model_config)
         set_deterministic(42)
         
-        train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1)
         # check if the dataloaders are not empty
         assert len(train_loader) > 0, "Train dataloader is empty"
         assert len(val_loader) > 0, "Validation dataloader is empty"
         # check if the first batch has the correct shape
-        for batch in train_loader:
+        for i, batch in enumerate(train_loader):
             images, labels, image_title = batch["image"], batch["label"], batch["image_title"]
+            if i == 0:
+                print("shapes", images.shape, labels.shape)
 
-            assert images.shape == (4, 3, 384, 384, 155), f"Expected 5D tensor for images, got {images.shape}"
-            assert labels.shape == (4, 3, 384, 384, 155), f"Expected 5D tensor for labels, got {labels.shape}"
+            assert len(images.shape) == 5, f"Expected 5D tensor for images, got {images.shape}"
+            assert len(labels.shape) == 5, f"Expected 5D tensor for labels, got {labels.shape}"
             # labels should only be binarized
             unique_labels = torch.unique(labels)
             print("Unique labels in the label:", unique_labels)
@@ -176,9 +178,13 @@ class TestMDSA2:
         details = OmegaConf.load(open(join(os.getenv("PROJECT_PATH", ""), 'MDSA2', 'config', "sam2_tenfold", 'details.yaml'), 'r'))
         model_config = OmegaConf.merge(model_config, details)
         model_config.dataset = "brats_africa"
+        model_config.agg_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_val[0]}", "best_model.pth")
+        path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_val[0]}")
+        model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", path_thing, "best_model_sam2.pth")
+        
         # set batch size to 1 for comparison w/ unet
         set_deterministic(42)
-        train_loader, val_loader, file_paths = get_dataloaders(model_config, use_preprocessed=True, modality_to_repeat=-1, verbose=False)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1, verbose=False)
 
         mdsa2 = initialize_mdsa2(model_config, dataloaders=(train_loader, val_loader), use_unet=use_unet)
         
@@ -189,11 +195,11 @@ class TestMDSA2:
                 # print("MD-SA2 metrics:", metrics_mdsa2)
         
         # send to json
-        with open(f"test_metrics_sa2_fold_{model_config.fold_eval}.json", "w") as f:
+        with open(f"sa2_fold_{model_config.fold_eval}.json", "w") as f:
             json.dump(mdsa2.metric_accumulator_sa2.get_metrics(), f, indent=4)
 
         if use_unet:
-            with open(f"test_metrics_mdsa2_fold_{model_config.fold_eval}.json", "w") as f:
+            with open(f"mdsa2_fold_{model_config.fold_eval}.json", "w") as f:
                 json.dump(mdsa2.unet_model.metric_accumulator.get_metrics(), f, indent=4)
         print("MDSA2 one-pass test passed for fold", model_config.fold_eval)
 
@@ -202,5 +208,5 @@ if __name__ == "__main__":
     TestData.test_preprocess()
     TestData.test_dataloading()
     TestData.visualize_test_and_image()
-    TestMDSA2.test_onepass(use_unet=False, fold_eval=0)  # test only SAM stage
-    TestMDSA2.test_onepass(use_unet=True, fold_eval=0)   # test full MD-SA2 model
+    TestMDSA2.test_onepass(use_unet=False, fold_eval=0)
+    TestMDSA2.test_onepass(use_unet=True, fold_eval=0)

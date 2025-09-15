@@ -40,6 +40,8 @@ from monai.transforms.croppad.dictionary import (
 )
 from utils import get_volume_number, join, set_deterministic
 import yaml
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="monai.*")
 
 load_dotenv(override=True)
 
@@ -322,11 +324,11 @@ class AddNameFieldAggregator(transforms.transform.MapTransform):
 
         if not "image_title" in d:
             if not self.send_real_path:
-                p = d["image"]
-                basename = os.path.basename(p)
-                name, ext = os.path.splitext(basename)
-                d["image_title"] = name.split("_")[1]
+                d["image_title"] = d["image"].split("-")[-3].lstrip("0")
+
             else:
+                print("image other", d["image"])
+
                 d["image_title"] = d["image"]
                 d["label_title"] = d["label"]
 
@@ -628,7 +630,7 @@ def preprocess(config, use_normalize=True):
 
         curr_idx += 1
 
-def get_dataloaders(config, use_preprocessed=False, verbose=False, modality_to_repeat=-1):
+def get_dataloaders(config, verbose=False, only_val_transforms=False, modality_to_repeat=-1):
     train_transforms = transforms.compose.Compose(
         [
             AddNameField(keys=["image"]),
@@ -644,6 +646,13 @@ def get_dataloaders(config, use_preprocessed=False, verbose=False, modality_to_r
             RandShiftIntensityd(keys=["image"], offsets=0.5, prob=0.3, channel_wise=True) if config.augmentation.FG is not None else None,
             RandScaleIntensityd(keys=["image"], factors=0.5, prob=0.3, channel_wise=True) if config.augmentation.FG is not None else None,
             ToTensord(keys=["image", "label"], track_meta=False)
+        ] if not only_val_transforms else [
+            AddNameField(keys=["image"]),
+            LoadImaged(keys=["image", "label"]), # assuming loading multiple at the same time.
+            # RepeatModality(keys=["image", "label"], modality_to_repeat=modality_to_repeat) if modality_to_repeat != -1 else None, # repeat t2f 3 times
+            ConvertToMultiChannel(keys="label", use_softmax=False),
+            CastToTyped(keys=["image", "label"], dtype=(torch.float16, torch.uint8)),
+            ToTensord(keys=["image", "label"], track_meta=False),
         ]
     )
 
@@ -682,49 +691,71 @@ def get_dataloaders(config, use_preprocessed=False, verbose=False, modality_to_r
     return train_loader, val_loader, file_paths
 
 
-def generate_folds_aggregator(direc, fold_train, fold_val, modalities, use_ref_volume=False):
+def generate_folds_aggregator(direc, fold_train, fold_val, modalities, use_ref_volume=True):
     
     json_path = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "train.json")
-    train_files, validation_files = datafold_read(
-        fold_val=fold_val,
-        fold_train=fold_train,
-        modalities=modalities,
-        json_path=json_path,
-    )
-
-    # Extract volume numbers for train and validation
-    vols_train = [get_volume_number(file['image'][0]) for file in train_files]
-    vols_val = [get_volume_number(file['image'][0]) for file in validation_files]
-
-    print("train & validation counts for aggregator", len(vols_train), len(vols_val))
-    
-    train_paths, valid_paths = [], []
-
-    def create_file_paths(num, use_ref_volume):
-        base = {
-            "image": join(direc, f"pred_{num}.npy"),
-            "label": join(direc, f"label_{num}.npy"),
-        }
-        if use_ref_volume:
-            base["ref_volume"] = join(direc, f"brain_volume_{num}.npy")
-        return base
-
-
-    for f in os.listdir(direc):
-      if not 'brain_volume' in f:
-        continue
-
-      num = os.path.splitext(f)[0].split("_")[-1]
-      if num in vols_train:
-        train_paths.append(create_file_paths(num, use_ref_volume))
-      elif num in vols_val:
-        valid_paths.append(create_file_paths(num, use_ref_volume))
-      else:
-        raise Exception(f"Didn't find the current file {f} in train or val")
-
-    print("final lengths of train and valid paths", len(train_paths), len(valid_paths))
+    # a single path: home/benjaminli/Documents/coding/md-sa2-eval/data/preprocessed/BraTS-SSA-00041-000/BraTS-SSA-00041-000-t2f.npy
+    # 
 
     return train_paths, valid_paths
+
+def get_aggregator_loader(batch_size, roi=(128,128,128), file_paths={}, num_workers=0):
+    from utils import set_deterministic
+
+    set_deterministic(seed=1234)
+    
+    image_label_arr = ["image", "label", "ref_volume"]
+    
+
+    train_transform = transforms.Compose(
+        [
+            AddNameFieldAggregator(keys=image_label_arr, send_real_path=False),
+            transforms.LoadImaged(keys=image_label_arr),
+            # Transpose_Transform(keys=image_label_arr),
+            # transforms.EnsureChannelFirstd(keys=image_label_arr),
+            transforms.CropForegroundd(
+                keys=image_label_arr,
+                source_key="image",
+                k_divisible=[roi[0], roi[1], roi[2]],
+            ),
+            transforms.RandSpatialCropd(
+                keys=image_label_arr,
+                roi_size=[roi[0], roi[1], roi[2]],
+                random_size=False,
+            ),
+            transforms.RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=0),
+            transforms.RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=1),
+            transforms.RandFlipd(keys=image_label_arr, prob=0.3, spatial_axis=2),
+            # rand zoom
+            transforms.RandZoomd(keys=image_label_arr, prob=0.3, min_zoom=0.8, max_zoom=1.2),
+            
+        ]
+    )
+    val_transform = transforms.Compose(
+        [
+            AddNameFieldAggregator(keys=image_label_arr, send_real_path=False),
+            transforms.LoadImaged(keys=image_label_arr),
+        ]
+    )
+    train_ds = monai.data.Dataset(data=file_paths["train"], transform=train_transform)
+
+    train_loader = monai.data.DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    val_ds = monai.data.Dataset(data=file_paths["val"], transform=val_transform)
+    val_loader = monai.data.DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+
+    return train_loader, val_loader
 
 class Transpose_Transform(transforms.transform.MapTransform):
     def __init__(self, keys, allow_missing_keys=False):
