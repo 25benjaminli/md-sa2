@@ -1,20 +1,18 @@
 ## Code for [MD-SA2: optimizing Segment Anything 2 for multimodal, depth-aware brain tumor segmentation in sub-Saharan populations](https://www.spiedigitallibrary.org/journals/journal-of-medical-imaging/volume-12/issue-02/024007/MD-SA2--optimizing-Segment-Anything-2-for-multimodal-depth/10.1117/1.JMI.12.2.024007.full). 
  
-This repository implements a hybrid Segment Anything 2 and U-Net architecture for tackling brain tumor segmentation with low-quality MRI scans from sub-Saharan Africa, as well as including a comprehensive suite of evaluation criteria & comparisons. The full implementation is not yet available (see the checklist at the bottom of this README). 
-
-The goal of this repository is to provide a more streamlined implementation accessible to a wider audience, as compared to the original code which was not well compartmentalized. Please raise issues in the github repo if you are experiencing errors. 
+This repository is a revamp (to improve clarity, reduce bloat, and ease reproducibility) of my original code for this paper. MD-SA2 is a hybrid architecture (Segment Anything 2 + dynamic UNet w/ deep supervision) for brain tumor segmentation with low-quality MRI scans from sub-Saharan Africa, as well as a comprehensive suite of evaluation criteria & comparisons. See the checklist at the bottom of this README for which modules are currently usable. 
 
 ## Tutorial
 
-Note: replace base_folder with your base folder path. Also, make sure you've downloaded the weights. Make sure you have at plenty of extra space available on your system (>50 GB to be safe) - I have written scripts that preprocess the images and store to the disk, which consumes storage. Also, NVIDIA GPU with CUDA support is required for accelerated computing (mine is an RTX 3060 and has CUDA version 12.2). 
+Note: replace [base_folder] with your base folder path. Also, make sure you've downloaded the weights. Make sure you have at plenty of extra space available on your system (>50 GB to be safe) - I have written scripts that preprocess the images and store to the disk, which consumes storage. Also, NVIDIA GPU with CUDA support is required for accelerated computing (mine is an RTX 3060 and has CUDA version 12.2). 
 
 **1. download things (dataset, weights)**
 
 Clone this repository `git clone https://github.com/25benjaminli/md-sa2`. [base_folder] would be `md-sa2` by default, but feel free to change the name. 
 
-Visit https://www.synapse.org/Synapse:syn51156910 and make a data request for the sub-Saharan Africa dataset. Once it's downloaded, create a folder called "data" in your [base_folder] and move your dataset into there. At this stage, it can be renamed (I renamed it to brats_africa for the purposes of clarify & ease). 
+Visit https://www.synapse.org/Synapse:syn51156910 and make a data request for the sub-Saharan Africa dataset. Once it's downloaded, create a folder called "data" in your [base_folder] and move your dataset into there. 
 
-The weights for all models are available [here](https://drive.google.com/drive/folders/1aNFBVwMLzDVrq7z4rtE1ofvIq_U2oXtn). 
+The weights for all models are available [here](https://drive.google.com/drive/folders/1aNFBVwMLzDVrq7z4rtE1ofvIq_U2oXtn). Expected metrics are also included in the same parent directory but separate folder for your reference. 
 
 
 **2. install dependencies for the base project.**
@@ -66,5 +64,5 @@ working modules
 - [x] train_mdsa2.py
 - [x] eval_mdsa2.py
 - [x] eval_unet.py
-- [ ] train_unet.py
+- [x] train_unet.py
 - [ ] eval_pretrain.py

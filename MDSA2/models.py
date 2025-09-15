@@ -15,7 +15,7 @@ from monai.transforms import (
 )
 from functools import partial
 from monai.inferers import sliding_window_inference
-from utils import generate_rndm_path, AverageMeter, join, register_net_sam2
+from utils import generate_rndm_path, AverageMeter, join, register_net_sam2, get_without_name
 import torch.nn as nn
 import torch
 import torch.nn as nn
@@ -43,8 +43,8 @@ class UNetWrapper():
     support for "reference volumes" and custom metric accumulation. 
     """
     def __init__(self, train_loader, val_loader,
-                  loss_func, use_scaler, optimizer,
-                 config, verbose, **model_params):
+                  loss_func, use_scaler,
+                  train_params, config, verbose, **model_params):
         
         if config.model_type == "UNet":
             self.model = UNet(**model_params).to("cuda")
@@ -64,11 +64,17 @@ class UNetWrapper():
         if use_scaler:
             self.scaler = torch.cuda.amp.GradScaler(enabled=True)
 
-        if optimizer == "AdamW":
-            self.optimizer = optim.AdamW(self.model.parameters(), lr=1e-3,
-                                               weight_decay=1e-4)
-        
-        
+        if train_params["optimizer"]["name"] == "AdamW":
+            self.optimizer = optim.AdamW(self.model.parameters(), **get_without_name(train_params["optimizer"]))
+            
+        if train_params["scheduler"]["name"] == "CosineAnnealingLR":
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, **get_without_name(train_params["scheduler"]))
+        elif train_params["scheduler"]["name"] == "ReduceLROnPlateau":
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, **get_without_name(train_params["scheduler"]))
+        elif train_params["scheduler"]["name"] == "ExponentialLR":
+            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, **get_without_name(train_params["scheduler"]))
+
+
         self.config = config
         self.metric_accumulator = MetricAccumulator(
             # additional_metrics={
@@ -113,12 +119,24 @@ class UNetWrapper():
                 del ref_volume
 
             if idx == 0 and self.verbose:
+                print("current learning rate", self.optimizer.param_groups[0]['lr'])
                 print(f'{batch_data["image_title"]}, target shape', data.shape, target.shape, data.mean(), data.std())
 
             
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
                 logits = self.model(data)
-                loss = self.loss_func(logits, target)
+                # loss = self.loss_func(logits, target)
+                if len(logits.shape) == 6:
+                    # print("using deep supervision")
+                    logits = torch.unbind(logits, dim=1)
+                    loss, weights = 0.0, 0.0
+                    for i, logit in enumerate(logits):
+                        # print("logits shape", logits[:, i].shape)
+                        loss += self.loss_func(logit, target) * 0.5**i
+                        weights += 0.5**i
+                    loss /= weights
+                else:
+                    loss = self.loss_func(logits, target)
 
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
@@ -129,6 +147,9 @@ class UNetWrapper():
 
             # del data, target, logits, loss
 
+        if hasattr(self, 'scheduler'):
+            self.scheduler.step()
+        
         return run_loss.avg
     
     def validate_epoch(self):
@@ -588,7 +609,7 @@ def initialize_mdsa2(model_config, dataloaders, use_unet=True, verbose=False) ->
             "infer_overlap": 0.5,
             "fold_val": model_config.fold_val,
             "volumes_to_collect": volumes_to_collect,
-            "model_name": "aggregator"
+            "model_name": "aggregator",
         })
         
         strides = [[1, 1, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
@@ -611,7 +632,17 @@ def initialize_mdsa2(model_config, dataloaders, use_unet=True, verbose=False) ->
         }
 
         aggregator_unet = UNetWrapper(train_loader=train_loader, val_loader=val_loader, loss_func="Dice", 
-        use_scaler=True, optimizer="AdamW", config=config, verbose=verbose, **model_params)
+        use_scaler=True, train_params= {
+            "optimizer": {
+                "name": "AdamW",
+                "lr": 1e-3,
+                "weight_decay": 1e-5
+            },
+            "scheduler": {
+                "name": "CosineAnnealingLR",
+                "T_max": config.max_epochs,
+            }
+        }, config=config, verbose=verbose, **model_params)
 
         # load aggregator unet weights
         if model_config.agg_ckpt is not None and os.path.exists(model_config.agg_ckpt):

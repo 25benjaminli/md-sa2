@@ -33,6 +33,9 @@ load_dotenv(override=True)
 def join(*paths):
    return os.path.normpath(os.path.join(*paths))
 
+def get_without_name(d):
+    return {k: v for k, v in d.items() if k != 'name'}
+
 def visualize_3D_volumes(names_to_volumes, names_to_labels, names_to_preds):
   """
   Args:

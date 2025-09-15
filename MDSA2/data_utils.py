@@ -325,10 +325,7 @@ class AddNameFieldAggregator(transforms.transform.MapTransform):
         if not "image_title" in d:
             if not self.send_real_path:
                 d["image_title"] = d["image"].split("-")[-3].lstrip("0")
-
             else:
-                print("image other", d["image"])
-
                 d["image_title"] = d["image"]
                 d["label_title"] = d["label"]
 

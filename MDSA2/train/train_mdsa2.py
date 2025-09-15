@@ -69,7 +69,7 @@ if __name__ == "__main__":
         train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1, verbose=False)
         mdsa2 = initialize_mdsa2(model_config, dataloaders=(train_loader, val_loader))
         
-        # save_folder = "./runs/15ihjlyonm/fold_0"
+        # save_folder = "./runs/9f22oklasc/cv_fold_0"
         save_folder = join(model_config.snapshot_path, f'cv_fold_{fold_val}')
 
         writer = SummaryWriter(log_dir=save_folder)
@@ -114,7 +114,7 @@ if __name__ == "__main__":
         if os.path.exists(os.getenv("UNREFINED_VOLUMES_PATH", "")):
             shutil.rmtree(os.getenv("UNREFINED_VOLUMES_PATH", ""))
 
-        # del train_loader, val_loader
+        del train_loader, val_loader
         train_loader, val_loader, file_paths = get_dataloaders(config=model_config, only_val_transforms=True, modality_to_repeat=-1, verbose=False)
 
         os.makedirs(os.getenv("UNREFINED_VOLUMES_PATH", ""), exist_ok=True)
@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
 
         # delete and reload train and val loaders to reflect the new files
-        del train_loader, val_loader
+        # del train_loader, val_loader
         train_loader, val_loader = get_aggregator_loader(
             batch_size=batch_size_agg, 
             roi=(128,128,128),
@@ -160,6 +160,7 @@ if __name__ == "__main__":
 
         best_metrics_found = {}
 
+        print("training the aggregation network")
 
         for epoch in tqdm(range(max_epochs_agg)):
             print(f"--- Epoch {epoch+1}/{max_epochs_agg} ---")
