@@ -53,7 +53,12 @@ if __name__ == "__main__":
         model_config.dataset = "brats_africa"
         # set batch size to 1 for comparison w/ unet
         set_deterministic(42)
-        train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1, verbose=False)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config, verbose=False)
+        
+        # comment this part if working with custom data, just to assert modalities must be ordered as such: "t2f", "t1c", "t1n" (with my weights)
+        expected_mods = ["t2f", "t1c", "t1n"]
+        for i, mod in enumerate(expected_mods):
+            assert mod in file_paths["train"][0]["image"][i], f"expected to find {mod} got {file_paths['train'][0]['image'][i]}"
         
         path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_val[0]}")
         model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", path_thing, "best_model_sam2.pth")

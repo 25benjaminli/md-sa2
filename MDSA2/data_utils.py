@@ -206,6 +206,9 @@ def datafold_read(fold_train,fold_val, key="training", cap=60, modalities = ['t2
             if isinstance(d[k], list):
                 # only select the file paths that contain one of the modalities in the name
                 d[k] = [f for f in d[k] if any([m in f for m in modalities])]
+                if len(d[k]) == 1:
+                    # repeat that modality to fill up the rest. NOTE: this assumes the first modality in the list is repeated
+                    d[k] = [d[k][0] for _ in range(3)]
 
     tr = []
     val = []
@@ -619,12 +622,11 @@ def preprocess(config, use_normalize=True):
 
         curr_idx += 1
 
-def get_dataloaders(config, verbose=False, only_val_transforms=False, modality_to_repeat=-1):
+def get_dataloaders(config, verbose=False, only_val_transforms=False):
     train_transforms = transforms.compose.Compose(
         [
             AddNameField(keys=["image"]),
-            LoadImaged(keys=["image", "label"]), # assuming loading multiple at the same time.
-            # RepeatModality(keys=["image", "label"], modality_to_repeat=modality_to_repeat) if modality_to_repeat != -1 else None, # repeat t2f 3 times
+            LoadImaged(keys=["image", "label"]),
             ConvertToMultiChannel(keys="label", use_softmax=False),
             CastToTyped(keys=["image", "label"], dtype=(torch.float16, torch.uint8)),
 
@@ -637,8 +639,7 @@ def get_dataloaders(config, verbose=False, only_val_transforms=False, modality_t
             ToTensord(keys=["image", "label"], track_meta=False)
         ] if not only_val_transforms else [
             AddNameField(keys=["image"]),
-            LoadImaged(keys=["image", "label"]), # assuming loading multiple at the same time.
-            # RepeatModality(keys=["image", "label"], modality_to_repeat=modality_to_repeat) if modality_to_repeat != -1 else None, # repeat t2f 3 times
+            LoadImaged(keys=["image", "label"]),
             ConvertToMultiChannel(keys="label", use_softmax=False),
             CastToTyped(keys=["image", "label"], dtype=(torch.float16, torch.uint8)),
             ToTensord(keys=["image", "label"], track_meta=False),
@@ -648,8 +649,7 @@ def get_dataloaders(config, verbose=False, only_val_transforms=False, modality_t
     val_transforms = transforms.compose.Compose(
         [
             AddNameField(keys=["image"]),
-            LoadImaged(keys=["image", "label"]), # assuming loading multiple at the same time.
-            # RepeatModality(keys=["image", "label"], modality_to_repeat=modality_to_repeat) if modality_to_repeat != -1 else None, # repeat t2f 3 times
+            LoadImaged(keys=["image", "label"]),
             ConvertToMultiChannel(keys="label", use_softmax=False),
             CastToTyped(keys=["image", "label"], dtype=(torch.float16, torch.uint8)),
             ToTensord(keys=["image", "label"], track_meta=False),

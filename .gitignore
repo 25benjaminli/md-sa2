@@ -24,17 +24,18 @@ MDSA2/eval/cv_metrics.json
 MDSA2/eval/eval_pretrain.py
 MDSA2/eval/runs_unet/
 
+MDSA2/ablations/runs/
+MDSA2/ablations/medsam_runs/
+MDSA2/ablations/sa1lora_runs/
 
 MDSA2/train/train_unet.py
+MDSA2/train/runs_unet/
 
 MDSA2/experiments
 comparisons/model.pt
 validation/
 MDSA2/unit_tests/test_metrics_*.json
 
-# comparisons/swinunetr*
-# comparisons/plainconvunet*
-# comparisons/unetregular*
 comparisons/models/
 comparisons/Medical-SAM-Adapter/
 comparisons/foreground-bt/

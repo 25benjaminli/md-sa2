@@ -4,6 +4,8 @@ from utils import set_deterministic
 from data_utils import preprocess, load_from_expected_json
 
 import os
+os.environ['QT_QPA_PLATFORM'] = 'offscreen' # to prevent the weird qt platform issue. BUT: if you want to use 
+
 from omegaconf import OmegaConf
 from dotenv import load_dotenv
 from utils import join
@@ -17,7 +19,7 @@ if __name__ == '__main__':
     parser.add_argument('--config_folder', type=str, default='sam2_tenfold', help='folder containing configurations for the experiment')
     parser.add_argument('--no_normalize', action='store_true', help='dont use preprocessed data')
     parser.add_argument('--overrides', type=str, help='additional overrides for config folder')
-    parser.add_argument('--expected_folds', type=str, help='load from expected folds')
+    parser.add_argument('--expected_folds', type=str, default="expected_folds.json", help='load from expected folds')
     args = parser.parse_args()
 
     # first, generate the json

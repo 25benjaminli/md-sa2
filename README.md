@@ -65,12 +65,12 @@ Working modules
 - [x] eval_mdsa2.py
 - [x] eval_unet.py
 - [x] train_unet.py
-- [ ] data_ablations.py
-- [ ] model_ablations.py
+- [x] data_ablations.py
+- [x] model_ablations.py
 
 As a refresher:
 1. Data ablations: evaluate sa2 (tiny model) with different combos of modalities - t2f only, t1c only, t1 only, t1w only, t2f+t1c+t1
-2. Model ablations: compare sa1-LoRA/sa2-b+/sa2-t/mdsa2/medsam
+2. Model ablations: compare sa1-LoRA/sa2-b+/sa2-t/mdsa2/medsam. Only sa1-LoRA + medsam (zero-shot) are included in the file since metrics for other models can be acquired via other training steps (e.g. customize config for b+ model). 
 
 For further comparisons, I have not included them in this repository to avoid too much crowding.
 - View my fork of [this](https://github.com/25benjaminli/foreground-bt) repository to compile the results for the [few-shot algorithm](https://pmc.ncbi.nlm.nih.gov/articles/PMC10093064/)

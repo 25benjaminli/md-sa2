@@ -326,21 +326,7 @@ def save_checkpoint(model, epoch, filename="model_aggregator.pt", best_acc=0, di
     torch.save(save_dict, filename)
     print("Saving checkpoint", filename)
 
-def register_medsam(model_config):
-  sam, img_embedding_size = sam_model_registry[model_config.vit_name](checkpoint=model_config.sam_ckpt,
-                                          image_size=model_config.img_size,
-                                          num_classes=model_config.num_classes,
-                                          pixel_mean=[0, 0, 0],
-                                          pixel_std=[1, 1, 1]) # change pixel std and mean?? num classes is not including background
-  
-  print("image embedding size", img_embedding_size)
-  # load checkpoint for sam if it exists
-  
-  sam = sam.to('cuda')
-
-  return sam
-
-def register_net(model_config):
+def register_net_sam1(model_config):
   sam, img_embedding_size = sam_model_registry[model_config.vit_name](checkpoint=model_config.sam_ckpt,
                                           image_size=model_config.img_size,
                                           num_classes=model_config.num_classes,
@@ -349,13 +335,17 @@ def register_net(model_config):
   
   print("image embedding size", img_embedding_size)
   sam = sam.to('cuda')
-  pkg = import_module(model_config.module)
-  net = pkg.LoRA_Sam(sam, model_config.rank).cuda()
-  if model_config.ft_ckpt is not None:
-    net.load_lora_parameters(model_config.ft_ckpt)
 
-  return net
-
+  if model_config.rank != -1:
+    pkg = import_module(model_config.module)
+    net = pkg.LoRA_Sam(sam, model_config.rank).cuda()
+    if model_config.ft_ckpt is not None:
+      net.load_lora_parameters(model_config.ft_ckpt)\
+    
+    return net
+  else:
+    return sam
+    
 def register_net_sam2(model_config):
   from sam2.build_sam import build_sam2
   from sam2.sam2_image_predictor import SAM2ImagePredictor

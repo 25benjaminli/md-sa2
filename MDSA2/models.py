@@ -99,11 +99,7 @@ class UNetWrapper():
         self.model.eval()
 
     def save_model(self, epoch, save_dir):
-        save_path = generate_rndm_path(save_dir)
-        base, fname = os.path.split(save_path)
-        fname = f"{self.config.model_name}_{fname}"
-        save_path = join(base, fname)
-        os.makedirs(save_dir, exist_ok=True)
+        save_path = join(save_dir, "best_model.pth")
         torch.save(self.model.state_dict(), save_path)
         print(f"Model weights saved for epoch {epoch}")
 
@@ -221,7 +217,7 @@ class MDSA2(nn.Module):
     """
     End-to-end module combining SA2 and U-Net for medical image segmentation. 
     """
-    def __init__(self, sam2_model, unet_model: UNetWrapper, config=None, loss_type="GDF"):
+    def __init__(self, sam2_model, unet_model: UNetWrapper, config=None, loss_type="GDF", verbose=False):
         super().__init__()
         self.sam2_model = sam2_model
         self.unet_model = unet_model
@@ -237,7 +233,7 @@ class MDSA2(nn.Module):
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.config.use_amp)
         self.optimizer = optim.AdamW(filter(lambda p: p.requires_grad, self.sam2_model.predictor.model.parameters()),
                                     lr=self.config.base_lr, **config.optimizers.ADAMW)
-
+        self.verbose = verbose
 
 
     def forward(self, batch, save_path=None):
@@ -290,10 +286,18 @@ class MDSA2(nn.Module):
         for idx, batch in tqdm(enumerate(train_loader), total=len(train_loader), disable=False):
             image, label = batch["image"].cuda(), batch["label"].cuda()
             
+            # debug
+            if self.verbose and idx == 0:
+                print("image, label shape", image.shape, label.shape)
+
             for current_slice in range(image.shape[-1]):
                 with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.config.use_amp):            
                     low_res_labels = F.interpolate(label[...,current_slice], self.config.img_size//4, mode="nearest-exact")
                     outputs = self.sam2_model(image[...,current_slice], upscale=True)
+                    
+                    # debug
+                    if self.verbose and current_slice == 0:
+                        print("output shape", outputs['low_res_logits'].shape)
 
                     assert outputs['low_res_logits'].shape == low_res_labels.shape, f"shapes of logits: {outputs['low_res_logits'].shape} shape of labels {low_res_labels.shape}"
                     loss = self.loss_func(outputs['low_res_logits'], low_res_labels) # what if I move this function OUTSIDE? and calculate on overall 3d shape
@@ -652,7 +656,7 @@ def initialize_mdsa2(model_config, dataloaders, use_unet=True, verbose=False) ->
     else:
         aggregator_unet = None
         
-    model = MDSA2(sam2, unet_model=aggregator_unet, config=model_config)
+    model = MDSA2(sam2, unet_model=aggregator_unet, config=model_config, verbose=verbose)
     model.eval()
 
     return model

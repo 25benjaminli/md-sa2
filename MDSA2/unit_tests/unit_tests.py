@@ -84,7 +84,7 @@ class TestData:
         model_config = OmegaConf.load(model_config)
         set_deterministic(42)
         
-        train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config)
         # check if the dataloaders are not empty
         assert len(train_loader) > 0, "Train dataloader is empty"
         assert len(val_loader) > 0, "Validation dataloader is empty"
@@ -155,7 +155,7 @@ class TestData:
         
         update_plots(initial_slice)
         
-        ax_slider = plt.axes([0.1, 0.1, 0.8, 0.05], facecolor='lightgoldenrodyellow')
+        ax_slider = plt.axes([0.1, 0.1, 0.8, 0.05], facecolor='lightgoldenrodyellow') # type: ignore
         depth_slider = Slider(ax_slider, 'Depth', 0, D-1, valinit=initial_slice, valstep=1)
         
         depth_slider.on_changed(update_plots)
@@ -180,7 +180,7 @@ class TestMDSA2:
         
         # set batch size to 1 for comparison w/ unet
         set_deterministic(42)
-        train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1, verbose=False)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config, verbose=False)
 
         mdsa2 = initialize_mdsa2(model_config, dataloaders=(train_loader, val_loader), use_unet=use_unet)
         

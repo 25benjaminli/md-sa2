@@ -24,6 +24,8 @@ if __name__ == "__main__":
     parser.add_argument("--fold_val", type=int, default=-1, help="Fold to evaluate. -1 means do the full CV.")
     
     base_path = generate_rndm_path("runs_unet")
+    print("writing to", base_path)
+
     # base_path = "runs_unet/7d3fs6fb5s"
 
     

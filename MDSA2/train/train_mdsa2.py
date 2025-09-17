@@ -20,7 +20,7 @@ sys.path.pop(0)
 
 import json
 import argparse
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter # type: ignore
 from tqdm import tqdm
 
 if __name__ == "__main__":
@@ -38,6 +38,7 @@ if __name__ == "__main__":
         folds_to_test = [args.fold_val]
 
     final_sa_metrics = {}
+    final_mdsa2_metrics = {}
 
     max_epochs_sa = 20
     val_every_sa = 2
@@ -62,14 +63,17 @@ if __name__ == "__main__":
         model_config.dataset = "brats_africa"
 
         set_deterministic(42)
-        train_loader, val_loader, file_paths = get_dataloaders(model_config, modality_to_repeat=-1, verbose=False)
+        train_loader, val_loader, file_paths = get_dataloaders(model_config, verbose=False)
         mdsa2 = initialize_mdsa2(model_config, dataloaders=(train_loader, val_loader))
         
         # save_folder = "./runs/9f22oklasc/cv_fold_0"
         save_folder = join(model_config.snapshot_path, f'cv_fold_{fold_val}')
+        print("writing to", save_folder)
 
         writer = SummaryWriter(log_dir=save_folder)
         best_metrics_found = {}
+        OmegaConf.save(model_config, join(save_folder, "model_config.yaml"))
+
         for epoch in range(max_epochs_sa):
             print(f"--- Epoch {epoch+1}/{max_epochs_sa} ---")
             avg_train_loss, avg_batch_time = mdsa2.train_loop_sa(train_loader)
@@ -92,14 +96,14 @@ if __name__ == "__main__":
 
                 if (best_metrics_found == {}) or (json_metrics_sa2["dice"]["avg"] > best_metrics_found["dice"]["avg"]):
                     best_metrics_found = json_metrics_sa2
-                    sam2_path = join(save_folder, 'best_model_sam2.pth')
+                    model_path = join(save_folder, 'best_model_sam2.pth')
 
-                    print(f"saving NEW BEST model {json_metrics_sa2['dice']['avg']} to {sam2_path}")
+                    print(f"saving NEW BEST model {json_metrics_sa2['dice']['avg']} to {model_path}")
                     # save model
                     if model_config.rank > 0:
-                        mdsa2.sam2_model.save_lora_parameters(sam2_path)
+                        mdsa2.sam2_model.save_lora_parameters(model_path)
                     else:
-                        torch.save(mdsa2.sam2_model.predictor.model.state_dict(), sam2_path)
+                        torch.save(mdsa2.sam2_model.predictor.model.state_dict(), model_path)
 
                     with open(join(save_folder, f"best_metrics.json"), "w") as f:
                         json.dump(best_metrics_found, f, indent=4)
@@ -111,7 +115,7 @@ if __name__ == "__main__":
             shutil.rmtree(os.getenv("UNREFINED_VOLUMES_PATH", ""))
 
         del train_loader, val_loader
-        train_loader, val_loader, file_paths = get_dataloaders(config=model_config, only_val_transforms=True, modality_to_repeat=-1, verbose=False)
+        train_loader, val_loader, file_paths = get_dataloaders(config=model_config, only_val_transforms=True, verbose=False)
 
         os.makedirs(os.getenv("UNREFINED_VOLUMES_PATH", ""), exist_ok=True)
 
@@ -179,13 +183,22 @@ if __name__ == "__main__":
 
                 if (best_metrics_found == {}) or (json_metrics_agg["dice"]["avg"] > best_metrics_found["dice"]["avg"]):
                     best_metrics_found = json_metrics_agg
-                    unet_path = join(save_folder, 'best_model.pt')
+                    unet_path = join(save_folder, 'best_model.pth')
 
                     print(f"saving NEW BEST UNET model {json_metrics_agg['dice']['avg']} to {unet_path}")
                     # save model
-                    torch.save(mdsa2.unet_model.state_dict(), unet_path)
+                    torch.save(mdsa2.unet_model.state_dict(), unet_path) # type: ignore
 
                     with open(join(save_folder, f"best_agg_metrics.json"), "w") as f:
                         json.dump(best_metrics_found, f, indent=4)
 
         writer.close()
+
+        final_mdsa2_metrics[f"fold_{fold_val}"] = best_metrics_found
+
+
+    with open("./runs/total_sa_cv_metrics.json", "w") as f:
+        json.dump(final_sa_metrics, f)
+
+    with open("./runs/total_mdsa2_cv_metrics.json", "w") as f:
+        json.dump(final_mdsa2_metrics, f)
