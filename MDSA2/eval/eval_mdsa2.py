@@ -47,7 +47,7 @@ if __name__ == "__main__":
             model_config.snapshot_path = generate_rndm_path("runs_mdsa2")
             print("writing to ", model_config.snapshot_path)
         model_config.agg_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_val[0]}", "best_model.pth")
-
+        model_config.max_epochs_agg = 100
         details = OmegaConf.load(open(join(os.getenv("PROJECT_PATH", ""), 'MDSA2', 'config', "sam2_tenfold", 'details.yaml'), 'r'))
         model_config = OmegaConf.merge(model_config, details)
         model_config.dataset = "brats_africa"
@@ -68,8 +68,9 @@ if __name__ == "__main__":
             # print("batch title", batch["image_title"])
             with torch.no_grad():
                 metrics_sa2, metrics_mdsa2 = mdsa2(batch)
-        print("SA2 dice:", metrics_sa2["dice"]["classwise_avg"])
-        print("MD-SA2 dice:", metrics_mdsa2["dice"]["classwise_avg"])
+        
+        # print("SA2 dice:", metrics_sa2["dice"]["classwise_avg"])
+        # print("MD-SA2 dice:", metrics_mdsa2["dice"]["classwise_avg"])
 
         # print("SA2 hd95:", metrics_sa2["hd95"]["classwise_avg"])
         # print("MD-SA2 hd95:", metrics_mdsa2["hd95"]["classwise_avg"])

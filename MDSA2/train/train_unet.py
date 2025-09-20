@@ -24,11 +24,16 @@ def single_fold(args):
     volumes_to_collect = yaml.load(open(join(os.getenv("PROJECT_PATH", ""), "volumes_to_collect.yaml"), 'r'), Loader=yaml.FullLoader)
     
     roi = [128, 128, 128]
+    max_epochs = 100
+    # plot overall loss
+    best_dice = 0
+    val_every = 5
+
     config = OmegaConf.create({
-        "model_type": "DynUNet",
+        "model_type": args.model_type,
         "use_ref_volume": False,
         "batch_size": 1,
-        "max_epochs": 100,
+        "max_epochs": max_epochs,
         "roi": roi,
         "sw_batch_size": 1,
         "infer_overlap": 0.5,
@@ -71,13 +76,7 @@ def single_fold(args):
     train_loader, val_loader = get_unet_loader(batch_size=config.batch_size, fold_train=config.fold_train,
                                        fold_val=config.fold_val, roi=config.roi, modalities=['t2f', 't1c', 't1n'])
     
-    max_epochs = 100
-    # plot overall loss
-    best_dice = 0
-    val_every = 5
-    
-    unet_model = UNetWrapper(train_loader=train_loader, val_loader=val_loader, loss_func="Dice", 
-    use_scaler=True, train_params={
+    unet_model = UNetWrapper(train_loader=train_loader, val_loader=val_loader, train_params={
             "optimizer": {
                 "name": "AdamW",
                 "lr": 1e-3,
@@ -86,7 +85,9 @@ def single_fold(args):
             "scheduler": {
                 "name": "CosineAnnealingLR",
                 "T_max": max_epochs,
-            }
+            },
+            "loss_func": "Dice", 
+            "use_scaler": True
         }, config=config, verbose=False, **model_params)
 
     runs_dir = generate_rndm_path(f"runs_unet")

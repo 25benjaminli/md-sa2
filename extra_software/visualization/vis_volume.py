@@ -12,30 +12,47 @@ dotenv.load_dotenv(override=True)
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--volume_num', type=int, default=74, help='which volume to visualize')
+parser.add_argument('--vol', type=int, default=74, help='which volume to visualize')
+parser.add_argument('--fold', type=int, default=0, help='fold of the vol')
 parser.add_argument('--vis_module', type=str, default='plt', help='plt or vedo to see the predictions')
+parser.add_argument('--compare', type=str, default="aggregator,DynUNet,swinunetr", help="comma separated folders to draw comparisons. just one word if viewing one pred")
 
 args = parser.parse_args()
-volume_num = args.volume_num  # so long as you have the file in the right position, you can view it. 
+vol = args.vol  # so long as you have the file in the right position, you can view it. 
 vis_module = args.vis_module
 
 # ! recommended that you have already run the validation step of MD-SA2 or U-Net to generate the appropriate predictions
 modality_list = ['t2f', 't1c', 't1n']
-pred = np.load(f"volumes/aggregator/{str(volume_num).zfill(3)}_fold_0.npy")
-label = np.load(f"{os.getenv('PREPROCESSED_PATH', '')}/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-seg.npy")
-volumes = [nib.load(f"{os.getenv('DATASET_PATH', '')}/BraTS-SSA-{str(volume_num).zfill(5)}-000/BraTS-SSA-{str(volume_num).zfill(5)}-000-{modality}.nii.gz").get_fdata() for modality in modality_list]
+preds = []
+dices = []
+model_names = args.compare.split(",")
+for model in model_names:
+    loaded = np.load(f"volumes/{model}/{str(vol).zfill(3)}_fold_{args.fold}.npz")
+    print("loaded shapes", loaded['pred'].shape)
+    if loaded['pred'].shape[1] == 155:
+        # this is a bit janky but just permute it to match the other shapes
+        preds.append(np.transpose(loaded['pred'], (0, 2, 3, 1)))
+    else:
+        preds.append(loaded['pred'])
+    dices.append(loaded['dice_score'])
+
+print("dice scores", dices)
+
+label = np.load(f"{os.getenv('PREPROCESSED_PATH', '')}/BraTS-SSA-{str(vol).zfill(5)}-000/BraTS-SSA-{str(vol).zfill(5)}-000-seg.npy")
+volumes = [nib.load(f"{os.getenv('DATASET_PATH', '')}/BraTS-SSA-{str(vol).zfill(5)}-000/BraTS-SSA-{str(vol).zfill(5)}-000-{modality}.nii.gz").get_fdata() for modality in modality_list]
 print("label shape", label.shape) # (1, 224, 224, 155)
 # convert label to (3, 224, 224, 155) one hot encoded by value 
 label = np.concatenate([(label == i).astype(np.float32) for i in range(1, 4)], axis=0)
-C, H, W, D = pred.shape 
-print(f"Image shape: {pred.shape}") # (3, 224, 224, 155)
+C, H, W, D = preds[0].shape # assume all shapes are the same
+print(f"Image shape: {preds[0].shape}") # (3, 224, 224, 155)
 print(f"Label shape: {label.shape}") # (3, 224, 224, 155)
 
 if vis_module == 'plt':
     print("Using matplotlib to visualize")
     # load the saved test image and label
+    n_rows = 2+len(preds)
 
-    fig, axes = plt.subplots(3, 3, figsize=(15, 10))  
+    fig, axes = plt.subplots(n_rows, 3, figsize=(15, 10))  
     plt.subplots_adjust(bottom=0.25)
 
     initial_slice = 0
@@ -43,37 +60,41 @@ if vis_module == 'plt':
     def update_plots(slice_idx):
         slice_idx = int(slice_idx)
         
-        for i in range(3):
+        for i in range(n_rows):
             for j in range(3):
                 axes[i, j].clear()
         
-        for channel in range(min(3, C)):
+        for channel in range(C):
             axes[0, channel].imshow(volumes[channel][:, :, slice_idx], cmap='gray')
             axes[0, channel].set_title(f'Modality {modality_list[channel]} - Slice {slice_idx}')
             axes[0, channel].axis('off')
+        
+        for channel in range(C):
+            axes[1, channel].imshow(label[channel, :, :, slice_idx], cmap='gray')
+            axes[1, channel].set_title(f'Label Channel {channel} - Slice {slice_idx}')
+            axes[1, channel].axis('off')
 
-        for channel in range(min(3, C)):
-            axes[1, channel].imshow(pred[channel, :, :, slice_idx], cmap='gray')
-            axes[1, channel].set_title(f'Predicted Channel {channel} - Slice {slice_idx}')
-            axes[1, channel].axis('off')
+        for i, pred in enumerate(preds):
+            for channel in range(C):
+                axes[2+i, channel].imshow(pred[channel, :, :, slice_idx], cmap='gray')
+                axes[2+i, channel].set_title(f'{model_names[i]} dsc {dices[i][channel]:.3f} for C {channel} - Slice {slice_idx}')
+                axes[2+i, channel].axis('off')
         
-        for channel in range(min(3, C)):
-            axes[2, channel].imshow(label[channel, :, :, slice_idx], cmap='gray')
-            axes[2, channel].set_title(f'Label Channel {channel} - Slice {slice_idx}')
-            axes[2, channel].axis('off')
         
-        for channel in range(C, 3):
-            axes[0, channel].axis('off')
-            axes[1, channel].axis('off')
-            axes[2, channel].axis('off')
+
+        
+        # for channel in range(C, 3):
+        #     axes[0, channel].axis('off')
+        #     axes[1, channel].axis('off')
+        #     axes[2, channel].axis('off')
 
         
         fig.canvas.draw_idle()
 
     update_plots(initial_slice)
 
-    ax_slider = plt.axes([0.1, 0.1, 0.8, 0.05], facecolor='lightgoldenrodyellow')
-    depth_slider = Slider(ax_slider, 'Depth', 0, D-1, valinit=initial_slice, valstep=1)
+    ax_slider = plt.axes([0.9, 0.2, 0.03, 0.6], facecolor='lightgoldenrodyellow')
+    depth_slider = Slider(ax_slider, 'Depth', 0, D-1, valinit=initial_slice, valstep=1, orientation="vertical")
 
     depth_slider.on_changed(update_plots)
 
@@ -81,15 +102,17 @@ if vis_module == 'plt':
     plt.show()
 
 elif vis_module == 'vedo':
+    # ! only works with one prediction at a time
     from vedo import Volume, show
     
     label_meshes = [Volume(label[channel]) for channel in range(label.shape[0])]
-    pred_meshes = [Volume(pred[channel]) for channel in range(pred.shape[0])]
+    pred_meshes = [Volume(preds[0][channel]) for channel in range(preds[0].shape[0])]
     modality_meshes = [Volume(volume) for volume in volumes]
     show(*label_meshes, *pred_meshes, *modality_meshes, N=9, axes=1, viewup="z")
     # add bar that lets you go one slice at a time? Maybe a slider?
 
 elif vis_module == 'plotly':
+    # ! only possible if you're looking at one volume
 
     def read_pred(volume_orig):
         print("vol shape", volume_orig.shape)
@@ -143,7 +166,7 @@ elif vis_module == 'plotly':
     # ! every time you run, amke sure you update "mod_name"
     mod_name = "Modality t1c" # t1c, t1n, t2f
     # vis_slices_simultaneously = True # it's easier to explain if you just play around with it
-    # volume, max_val, r, c, nb_frames, isPred = read_pred(pred) # either pred or volume. 
+    # volume, max_val, r, c, nb_frames, isPred = read_pred(preds[0]) # either pred or volume. 
     volume, max_val, r, c, nb_frames, isPred = read_volume(volumes[0]) # either pred or volume. 
 
     # Define frames
@@ -255,7 +278,7 @@ elif vis_module == 'plotly':
     # t1ce_120.nii
 
     fig.update_layout(
-            title=f'Slices in volumetric data for volume {volume_num} for {mod_name}',
+            title=f'Slices in volumetric data for volume {vol} for {mod_name}',
             width=600,
             height=600,
             scene=dict(

@@ -43,7 +43,6 @@ class UNetWrapper():
     support for "reference volumes" and custom metric accumulation. 
     """
     def __init__(self, train_loader, val_loader,
-                  loss_func, use_scaler,
                   train_params, config, verbose, **model_params):
         
         if config.model_type == "UNet":
@@ -52,28 +51,26 @@ class UNetWrapper():
         elif config.model_type == "DynUNet":
             self.model = DynUNet(**model_params).to("cuda")
 
-        elif config.model_type == "SwinUNETR":
+        elif config.model_type == "swinunetr":
             self.model = SwinUNETR(**model_params).to("cuda")
 
         self.train_loader = train_loader
         self.val_loader = val_loader
-        
-        if loss_func == "Dice":
-            self.loss_func = DiceLoss(to_onehot_y=False, sigmoid=True)
 
-        if use_scaler:
-            self.scaler = torch.cuda.amp.GradScaler(enabled=True)
-
-        if train_params["optimizer"]["name"] == "AdamW":
-            self.optimizer = optim.AdamW(self.model.parameters(), **get_without_name(train_params["optimizer"]))
-            
-        if train_params["scheduler"]["name"] == "CosineAnnealingLR":
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, **get_without_name(train_params["scheduler"]))
-        elif train_params["scheduler"]["name"] == "ReduceLROnPlateau":
-            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, **get_without_name(train_params["scheduler"]))
-        elif train_params["scheduler"]["name"] == "ExponentialLR":
-            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, **get_without_name(train_params["scheduler"]))
-
+        if train_params is not None:
+            if train_params["optimizer"]["name"] == "AdamW":
+                self.optimizer = optim.AdamW(self.model.parameters(), **get_without_name(train_params["optimizer"]))
+                
+            if train_params["scheduler"]["name"] == "CosineAnnealingLR":
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, **get_without_name(train_params["scheduler"]))
+            elif train_params["scheduler"]["name"] == "ReduceLROnPlateau":
+                self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, **get_without_name(train_params["scheduler"]))
+            elif train_params["scheduler"]["name"] == "ExponentialLR":
+                self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, **get_without_name(train_params["scheduler"]))
+            if train_params["use_scaler"]:
+                self.scaler = torch.cuda.amp.GradScaler(enabled=True)
+            if train_params["loss_func"] == "Dice":
+                self.loss_func = DiceLoss(to_onehot_y=False, sigmoid=True)
 
         self.config = config
         self.metric_accumulator = MetricAccumulator(
@@ -168,14 +165,7 @@ class UNetWrapper():
                     data = torch.cat([data, ref_volume], dim=1) # concatenate the label and modalities
                     del ref_volume
                 
-                post_output = self.run_batch(batch_data) # run batch already cuda-izes it
-                
-                if self.config.fold_val[0] in self.config.volumes_to_collect.keys():
-                    if batch_data["image_title"][0] in self.config.volumes_to_collect[self.config.fold_val[0]]:
-                        # print("saving volume", batch_data["image_title"][0], val_output_convert[0].shape)
-                        predictions_base = join(os.getenv("PROJECT_PATH", ""),"extra_software", "visualization", "volumes", "aggregator")
-                        os.makedirs(predictions_base, exist_ok=True)
-                        np.save(join(predictions_base, f"{batch_data['image_title'][0]}_fold_{self.config.fold_val[0]}.npy"), post_output[0])
+                self.run_batch(batch_data) # run batch already cuda-izes it
 
                 # del batch_data["image"], batch_data["label"], logits, val_labels_list, val_outputs_list, post_output
 
@@ -207,10 +197,20 @@ class UNetWrapper():
         t_spent = (time.time()-inf)/self.config.batch_size
         val_labels_list = decollate_batch(batch["label"])
         val_outputs_list = decollate_batch(logits)
-
         
-        post_output = [self.post_pred(self.post_sigmoid(val_pred_tensor)) for val_pred_tensor in val_outputs_list]
+        post_output = [self.post_pred(self.post_sigmoid(val_pred_tensor)) for val_pred_tensor in val_outputs_list] # type: ignore
         self.metric_accumulator.update(y_pred=post_output, y_true=val_labels_list, time_spent=t_spent)
+        
+        for batch_idx in range(len(post_output)):
+            if self.config.fold_val[0] in self.config.volumes_to_collect.keys():
+                if batch["image_title"][batch_idx] in self.config.volumes_to_collect[self.config.fold_val[0]]:
+                    # print("saving volume", batch["image_title"][0], val_output_convert[0].shape)
+                    predictions_base = join(os.getenv("PROJECT_PATH", ""),"extra_software", "visualization", "volumes", self.config.model_name)
+                    os.makedirs(predictions_base, exist_ok=True)
+                    np.savez(join(predictions_base, f"{batch['image_title'][batch_idx]}_fold_{self.config.fold_val[0]}.npz"), 
+                            pred=post_output[batch_idx], # type: ignore
+                            dice_score=self.metric_accumulator.meters["dice"].arr[batch_idx])
+
         return post_output
 
 class MDSA2(nn.Module):
@@ -270,7 +270,8 @@ class MDSA2(nn.Module):
         data = torch.cat([torch.permute(arr_pred, (0,1,4,2,3)), image], dim=1) # ensure that the images are aligned properly. maybe need to permute image
         batch = {
             "image": data,
-            "label": label
+            "label": label,
+            "image_title": volume_name
         }
         with torch.inference_mode():
             with torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
@@ -607,7 +608,7 @@ def initialize_mdsa2(model_config, dataloaders, use_unet=True, verbose=False) ->
             "model_type": "DynUNet",
             "use_ref_volume": True,
             "batch_size": 1,
-            "max_epochs": 100,
+            "max_epochs": model_config.max_epochs_agg,
             "roi": [128, 128, 128],
             "sw_batch_size": 1,
             "infer_overlap": 0.5,
@@ -635,8 +636,7 @@ def initialize_mdsa2(model_config, dataloaders, use_unet=True, verbose=False) ->
             "trans_bias": True,
         }
 
-        aggregator_unet = UNetWrapper(train_loader=train_loader, val_loader=val_loader, loss_func="Dice", 
-        use_scaler=True, train_params= {
+        aggregator_unet = UNetWrapper(train_loader=train_loader, val_loader=val_loader, train_params= {
             "optimizer": {
                 "name": "AdamW",
                 "lr": 1e-3,
@@ -645,7 +645,9 @@ def initialize_mdsa2(model_config, dataloaders, use_unet=True, verbose=False) ->
             "scheduler": {
                 "name": "CosineAnnealingLR",
                 "T_max": config.max_epochs,
-            }
+            },
+            "use_scaler": True,
+            "loss_func": "Dice"
         }, config=config, verbose=verbose, **model_params)
 
         # load aggregator unet weights

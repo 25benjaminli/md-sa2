@@ -23,6 +23,8 @@ MDSA2/checkpoints/sam2_hiera_tiny.pt
 MDSA2/eval/cv_metrics.json
 MDSA2/eval/eval_pretrain.py
 MDSA2/eval/runs_unet/
+MDSA2/eval/runs_mdsa2/
+
 
 MDSA2/ablations/runs/
 MDSA2/ablations/medsam_runs/

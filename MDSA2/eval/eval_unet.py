@@ -20,7 +20,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights_folder', type=str, default="dynunet", help='folder where weights for all folds are stored')
-    parser.add_argument('--model_type', type=str, default="DynUNet", help='model type (DynUNet or swinunetr)')
+    parser.add_argument('--model_type', type=str, default="DynUNet", help='model type (DynUNet or SwinUNETR)')
     parser.add_argument("--fold_val", type=int, default=-1, help="Fold to evaluate. -1 means do the full CV.")
     
     base_path = generate_rndm_path("runs_unet")
@@ -88,11 +88,10 @@ if __name__ == "__main__":
             "fold_val": [fold_val],
             "fold_train": fold_train,
             "volumes_to_collect": volumes_to_collect,
-            "model_name": f"{args.model_type}_fold{fold_val}",
+            "model_name": f"{args.model_type}",
         })
     
-        unet_model = UNetWrapper(train_loader=train_loader, val_loader=val_loader, loss_func="Dice", 
-        use_scaler=True, optimizer="AdamW", config=config, verbose=False, **model_params)
+        unet_model = UNetWrapper(train_loader=train_loader, val_loader=val_loader, config=config, train_params=None, verbose=False, **model_params)
         weights_path = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", args.weights_folder, f"{args.model_type}_fold_{fold_val}.pt")
         unet_model.load_weights(weights_path=weights_path)
         

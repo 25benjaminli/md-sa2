@@ -623,6 +623,13 @@ def preprocess(config, use_normalize=True):
         curr_idx += 1
 
 def get_dataloaders(config, verbose=False, only_val_transforms=False):
+    config_path = os.path.join(os.getenv("PROJECT_PATH", ""), "data", "current_data_config.yaml")
+
+    with open(config_path, "r") as f:
+        config_temp = yaml.safe_load(f)
+
+    assert config_temp["preprocessing"]["resize_dims"] == [384, 384], f"Preprocessed image size must be 384x384 (for MD-SA2), got {config_temp['preprocessing']['resize_dims']}"
+
     train_transforms = transforms.compose.Compose(
         [
             AddNameField(keys=["image"]),

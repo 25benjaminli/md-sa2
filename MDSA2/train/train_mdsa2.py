@@ -56,6 +56,7 @@ if __name__ == "__main__":
         model_config.fold_train = [a for a in range(10) if a != fold_val]
         model_config.fold_val = [fold_val]
         model_config.snapshot_path = generate_rndm_path("runs")
+        model_config.max_epochs_agg = max_epochs_agg
 
         # set batch size to 1 for comparison w/ unet
         details = OmegaConf.load(open(join(os.getenv("PROJECT_PATH", ""), 'MDSA2', 'config', args.config_folder, 'details.yaml'), 'r'))

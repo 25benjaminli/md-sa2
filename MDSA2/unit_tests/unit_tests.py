@@ -177,7 +177,7 @@ class TestMDSA2:
         model_config.agg_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", "aggregator_cv", f"cv_fold_{model_config.fold_val[0]}", "best_model.pth")
         path_thing = join(f"{model_config.config_folder}_cv", f"cv_fold_{model_config.fold_val[0]}")
         model_config.ft_ckpt = join(os.getenv("PROJECT_PATH", ""), "MDSA2", "checkpoints", path_thing, "best_model_sam2.pth")
-        
+        model_config.max_epochs_agg = 100
         # set batch size to 1 for comparison w/ unet
         set_deterministic(42)
         train_loader, val_loader, file_paths = get_dataloaders(model_config, verbose=False)

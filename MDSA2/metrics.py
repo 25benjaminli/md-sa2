@@ -33,24 +33,26 @@ class MetricAccumulator():
             meter.reset()
         if hasattr(self, 'inference_meter'):
             self.inference_meter.reset()
-    def update(self, y_pred, y_true, save_pred_path=None, time_spent=None):
+    def update(self, y_pred, y_true, time_spent=None):
         if hasattr(self, 'inference_meter') and time_spent is not None:
             self.inference_meter.update(time_spent, n=1) # assumes it's already averaged over batch
 
         for metric_name in self.metric_dict.keys():
             # print("metric_name", type(self.metric_dict[metric_name]))
-            if type(self.metric_dict[metric_name]) != "function":
-                self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
-                val, not_nans = self.metric_dict[metric_name].aggregate()
-                self.meters[metric_name].update(val.cpu().numpy(), n=not_nans.cpu().numpy())
-                self.metric_dict[metric_name].reset()
+            if type(y_pred) == list:
+                batches = len(y_pred)
             else:
-                # assume that it just yields an output
-                val = self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
-                self.meters[metric_name].update(val.cpu().numpy(), n=1)
-
-        if save_pred_path:
-            np.save(save_pred_path, y_pred.cpu().numpy())
+                batches = y_pred.shape[0]
+            for batch_idx in range(batches):
+                if type(self.metric_dict[metric_name]) != "function":
+                    self.metric_dict[metric_name](y_pred=y_pred[batch_idx].unsqueeze(0), y=y_true[batch_idx].unsqueeze(0))
+                    val, not_nans = self.metric_dict[metric_name].aggregate()
+                    self.meters[metric_name].update(val.cpu().numpy(), n=not_nans.cpu().numpy())
+                    self.metric_dict[metric_name].reset() # reset the metric function itself since that accumulates too
+            # else:
+            #     # assume that it just yields an output
+            #     val = self.metric_dict[metric_name](y_pred=y_pred, y=y_true)
+            #     self.meters[metric_name].update(val.cpu().numpy(), n=1)
 
     def get_metrics(self):
         summary_dict = {}
